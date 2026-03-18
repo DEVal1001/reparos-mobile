@@ -46,11 +46,17 @@ jobs:
           echo "flet==0.24.1" > requirements.txt
           pip install flet==0.24.1
 
-      - name: Compilar APK com patch wakelock
+      - name: Limpar cache Gradle com kotlin-stdlib incompativel
+        run: |
+          rm -rf ~/.gradle/caches/transforms-4/ 2>/dev/null || true
+          rm -rf ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/ 2>/dev/null || true
+          echo "Cache Gradle limpo!"
+
+      - name: Compilar APK com patch total
         run: |
           python watcher.py &
           WPID=$!
-          echo "Watcher PID $WPID iniciado"
+          echo "Watcher PID $WPID"
           flet build apk --verbose 2>&1
           CODE=$?
           kill $WPID 2>/dev/null || true
