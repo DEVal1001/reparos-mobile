@@ -16,16 +16,23 @@ jobs:
       - name: Baixar código
         uses: actions/checkout@v4.2.2
 
-      - name: Configurar Python 3.12
+      - name: Configurar Python 3.11
         uses: actions/setup-python@v5.6.0
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4.7.1
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: Instalar Flutter 3.24.5
+        uses: subosito/flutter-action@v2.18.0
+        with:
+          flutter-version: "3.24.5"
+          channel: stable
+          cache: false
 
       - name: Aceitar licenças Android SDK
         run: |
@@ -34,42 +41,51 @@ jobs:
             > $ANDROID_SDK_ROOT/licenses/android-sdk-license
           printf 'd975f751698a77b662f1254ddbeed3901e976f5a' \
             > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
-          yes | sdkmanager --licenses || true
+          yes | flutter doctor --android-licenses || true
 
-      - name: REMOVER Flutter pré-instalado do runner
-        run: |
-          echo "=== Flutter ANTES ==="
-          which flutter 2>/dev/null && flutter --version || echo "Flutter não encontrado no PATH"
-          
-          # Remove o Flutter pré-instalado pelo runner
-          sudo rm -rf /opt/hostedtoolcache/flutter 2>/dev/null || true
-          sudo rm -f /usr/local/bin/flutter 2>/dev/null || true
-          sudo rm -f /usr/bin/flutter 2>/dev/null || true
-          
-          # Limpa o cache do shell
-          hash -r 2>/dev/null || true
-          
-          echo "=== Flutter DEPOIS ==="
-          which flutter 2>/dev/null && echo "AINDA PRESENTE - problema!" || echo "✅ Flutter removido com sucesso"
+      - name: Instalar flet 0.24.1
+        run: pip install flet==0.24.1
 
-      - name: Instalar flet 0.27.6
+      # SOLUÇÃO DEFINITIVA:
+      # O beforeEvaluate modifica o arquivo em disco ANTES do Gradle lê-lo.
+      # Isso acontece DEPOIS do flutter pub get (que verifica hashes),
+      # mas ANTES da avaliação do build.gradle — janela perfeita para o patch.
+      - name: Criar Gradle init script (patcha build.gradle antes de ser lido)
         run: |
-          pip install "flet==0.27.6" "flet-cli==0.27.6" --force-reinstall --no-cache-dir
-          python -c "import flet; print('✅ flet version:', flet.version.version)"
-          
-          # Mostra qual flet será usado
-          FLET=$(python -c "import sys,os; print(os.path.join(os.path.dirname(sys.executable),'flet'))")
-          echo "flet binário: $FLET"
-          $FLET --version
+          GRADLE_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          mkdir -p "$GRADLE_HOME/init.d"
 
-      - name: Compilar APK (flet instala Flutter 3.27.4 automaticamente)
-        run: |
-          FLET=$(python -c "import sys,os; print(os.path.join(os.path.dirname(sys.executable),'flet'))")
-          echo "Usando: $FLET"
-          $FLET --version
-          
-          # Executa o build — flet 0.27.6 vai baixar e instalar Flutter 3.27.4
-          $FLET build apk --verbose 2>&1
+          cat > "$GRADLE_HOME/init.d/fix_flutter_refs.gradle" << 'GROOVY'
+allprojects {
+    beforeEvaluate { proj ->
+        try {
+            def bf = proj.buildFile
+            if (bf != null && bf.exists()) {
+                String txt = bf.text
+                if (txt.contains('flutter.compileSdkVersion') ||
+                    txt.contains('flutter.minSdkVersion')     ||
+                    txt.contains('flutter.targetSdkVersion')) {
+                    println "[PATCH] Corrigindo: " + bf.absolutePath
+                    txt = txt.replace('flutter.compileSdkVersion', '34')
+                    txt = txt.replace('flutter.minSdkVersion',     '21')
+                    txt = txt.replace('flutter.targetSdkVersion',  '34')
+                    bf.text = txt
+                    println "[PATCH] OK!"
+                }
+            }
+        } catch (Exception e) {
+            println "[PATCH] Pulado: " + e.message
+        }
+    }
+}
+GROOVY
+
+          echo "✅ Init script criado em: $GRADLE_HOME/init.d/"
+          echo "Conteúdo:"
+          cat "$GRADLE_HOME/init.d/fix_flutter_refs.gradle"
+
+      - name: Compilar APK
+        run: flet build apk --verbose 2>&1
 
       - name: Listar APKs gerados
         run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK encontrado"
