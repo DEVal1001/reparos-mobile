@@ -27,48 +27,27 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Instalar Flutter 3.22.3
+      - name: Instalar Flutter
         uses: subosito/flutter-action@v2.18.0
         with:
           flutter-version: "3.22.3"
           channel: stable
-          cache: false   # sem cache — garante versão correta
-
-      - name: Verificar versão do Flutter
-        run: flutter --version
+          cache: false
 
       - name: Aceitar licenças Android SDK
         run: |
           mkdir -p $ANDROID_SDK_ROOT/licenses
-          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          echo "d975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
-          echo "84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          printf '24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\n84831b9409646a918e30573bab4c9c91346d8abd' \
+            > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          printf 'd975f751698a77b662f1254ddbeed3901e976f5a' \
+            > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
           yes | flutter doctor --android-licenses || true
 
       - name: Instalar Flet CLI
         run: pip install flet==0.24.1
 
-      - name: Pré-popular pub cache e corrigir wakelock_plus
-        run: |
-          # Cria projeto temporário para popular o pub cache
-          mkdir -p /tmp/prebuild && cd /tmp/prebuild
-          flutter create --platforms android --project-name prebuild . -q
-          # Adiciona wakelock_plus ao pubspec para fazer o download
-          echo "  wakelock_plus: 1.4.0" >> pubspec.yaml
-          flutter pub get || true
-          # Corrige o build.gradle do wakelock_plus no cache
-          find $HOME/.pub-cache -name "build.gradle" -path "*wakelock_plus*" | while read f; do
-            echo "Corrigindo: $f"
-            sed -i 's/flutter\.compileSdkVersion/34/g' "$f"
-            sed -i 's/flutter\.minSdkVersion/21/g' "$f"
-            sed -i 's/flutter\.targetSdkVersion/34/g' "$f"
-            cat "$f"
-          done
-          echo "Correção concluída!"
-
-      - name: Compilar APK
-        run: flet build apk --verbose 2>&1
+      - name: Compilar APK (com patch automático do wakelock_plus)
+        run: python patch_build.py
 
       - name: Listar APKs gerados
         run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK encontrado"
