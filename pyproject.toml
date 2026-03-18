@@ -1,0 +1,14 @@
+[tool.flet]
+app_name = "Reparos Maricá"
+product_name = "Gerenciamento dos Reparos"
+description = "Sistema de Gerenciamento dos Reparos - Maricá RJ"
+org = "br.marica.reparos"
+version = "1.0.0"
+
+[tool.flet.android]
+# Permissões necessárias no Android
+permissions = [
+    "android.permission.INTERNET",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+]
