@@ -41,13 +41,32 @@ jobs:
             > $ANDROID_SDK_ROOT/licenses/android-sdk-license
           printf 'd975f751698a77b662f1254ddbeed3901e976f5a' \
             > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
-          yes | flutter doctor --android-licenses || true
+
+      - name: Criar Gradle init script (corrige flutter.compileSdkVersion)
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/fix_flutter_props.gradle << 'GRADLEEOF'
+          // Injeta as propriedades flutter.* que o wakelock_plus 1.4.0 precisa
+          // mas que só existem dentro de um app Flutter completo.
+          class FlutterSdkProps {
+              def compileSdkVersion = 34
+              def minSdkVersion     = 21
+              def targetSdkVersion  = 34
+              def ndkVersion        = "25.1.8937393"
+          }
+          
+          allprojects {
+              ext.flutter = new FlutterSdkProps()
+          }
+          GRADLEEOF
+          echo "Init script criado:"
+          cat ~/.gradle/init.d/fix_flutter_props.gradle
 
       - name: Instalar Flet CLI
         run: pip install flet==0.24.1
 
-      - name: Compilar APK (com patch automático do wakelock_plus)
-        run: python patch_build.py
+      - name: Compilar APK
+        run: flet build apk --verbose 2>&1
 
       - name: Listar APKs gerados
         run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK encontrado"
