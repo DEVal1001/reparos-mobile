@@ -34,16 +34,28 @@ jobs:
             > $ANDROID_SDK_ROOT/licenses/android-sdk-license
           printf 'd975f751698a77b662f1254ddbeed3901e976f5a' \
             > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
+          yes | sdkmanager --licenses || true
 
-      # Flet 0.27.6 instala automaticamente o Flutter 3.27.4 compatível
-      - name: Instalar Flet 0.27.6
+      - name: Limpar flet antigo e instalar flet 0.27.6
         run: |
-          pip install flet==0.27.6
-          pip install flet-cli==0.27.6
-          flet --version
+          # Remove qualquer flet existente no sistema
+          pip uninstall flet flet-cli flet-runtime flet-embed flet-web -y 2>/dev/null || true
+          pip cache purge
+          # Instala versão correta
+          pip install "flet==0.27.6" "flet-cli==0.27.6" --no-cache-dir
+          # Confirma
+          python -c "import flet; print('flet version:', flet.version.version)"
+          # Mostra onde está o executável flet
+          python -c "import shutil; print('flet em:', shutil.which('flet'))"
 
-      - name: Compilar APK (flet instala Flutter automaticamente)
-        run: flet build apk --verbose 2>&1
+      # NÃO instala Flutter — o flet 0.27.6 instala o Flutter 3.27.4 automaticamente
+      - name: Compilar APK
+        run: |
+          # Garante que o flet do PATH é o 0.27.6, não um sistema antigo
+          FLET_BIN=$(python -c "import sys, os; print(os.path.join(os.path.dirname(sys.executable), 'flet'))")
+          echo "Usando flet em: $FLET_BIN"
+          $FLET_BIN --version
+          $FLET_BIN build apk --verbose 2>&1
 
       - name: Listar APKs gerados
         run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK encontrado"

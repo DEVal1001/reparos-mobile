@@ -1,12 +1,11 @@
 [tool.flet]
-app_name = "Reparos Maricá"
+app_name = "Reparos Marica"
 product_name = "Gerenciamento dos Reparos"
-description = "Sistema de Gerenciamento dos Reparos - Maricá RJ"
+description = "Sistema de Gerenciamento dos Reparos - Marica RJ"
 org = "br.marica.reparos"
 version = "1.0.0"
 
 [tool.flet.android]
-# Permissões necessárias no Android
 permissions = [
     "android.permission.INTERNET",
     "android.permission.READ_EXTERNAL_STORAGE",
