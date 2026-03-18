@@ -46,44 +46,6 @@ jobs:
       - name: Instalar flet 0.24.1
         run: pip install flet==0.24.1
 
-      # SOLUÇÃO DEFINITIVA:
-      # O beforeEvaluate modifica o arquivo em disco ANTES do Gradle lê-lo.
-      # Isso acontece DEPOIS do flutter pub get (que verifica hashes),
-      # mas ANTES da avaliação do build.gradle — janela perfeita para o patch.
-      - name: Criar Gradle init script (patcha build.gradle antes de ser lido)
-        run: |
-          GRADLE_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
-          mkdir -p "$GRADLE_HOME/init.d"
-
-          cat > "$GRADLE_HOME/init.d/fix_flutter_refs.gradle" << 'GROOVY'
-allprojects {
-    beforeEvaluate { proj ->
-        try {
-            def bf = proj.buildFile
-            if (bf != null && bf.exists()) {
-                String txt = bf.text
-                if (txt.contains('flutter.compileSdkVersion') ||
-                    txt.contains('flutter.minSdkVersion')     ||
-                    txt.contains('flutter.targetSdkVersion')) {
-                    println "[PATCH] Corrigindo: " + bf.absolutePath
-                    txt = txt.replace('flutter.compileSdkVersion', '34')
-                    txt = txt.replace('flutter.minSdkVersion',     '21')
-                    txt = txt.replace('flutter.targetSdkVersion',  '34')
-                    bf.text = txt
-                    println "[PATCH] OK!"
-                }
-            }
-        } catch (Exception e) {
-            println "[PATCH] Pulado: " + e.message
-        }
-    }
-}
-GROOVY
-
-          echo "✅ Init script criado em: $GRADLE_HOME/init.d/"
-          echo "Conteúdo:"
-          cat "$GRADLE_HOME/init.d/fix_flutter_refs.gradle"
-
       - name: Compilar APK
         run: flet build apk --verbose 2>&1
 

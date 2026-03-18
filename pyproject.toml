@@ -11,3 +11,8 @@ permissions = [
     "android.permission.READ_EXTERNAL_STORAGE",
     "android.permission.WRITE_EXTERNAL_STORAGE",
 ]
+
+# CORREÇÃO: força wakelock_plus 1.5.0+ que tem build.gradle compatível
+# com Android SDK 36 (sem flutter.compileSdkVersion)
+[tool.flet.flutter.pubspec.dependency_overrides]
+wakelock_plus = ">=1.5.0"
