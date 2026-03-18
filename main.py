@@ -100,6 +100,13 @@ def get_conn(page=None):
     return conn
 
 def init_db(page=None):
+    try:
+        db = get_db_path(page)
+        d = os.path.dirname(db)
+        if d:
+            os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
     conn = get_conn(page)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS solicitacoes (
@@ -291,7 +298,11 @@ class App:
         self.usuario  = None
         self.login_str = ""
         self._setup_page()
-        init_db(page)
+        # Sempre mostra o login — init_db em background sem travar
+        try:
+            init_db(page)
+        except Exception as e:
+            print(f"init_db: {e}")
         self._ir_login()
 
     def _setup_page(self):
@@ -321,7 +332,45 @@ class App:
         e_senha = inp("Senha", password=True)
         lbl_err = ft.Text("", color="#ff6666", size=13)
 
+        # Status do banco
+        db_path = get_db_path(self.page)
+        db_nome = os.path.basename(db_path) if db_path else "Nenhum"
+        db_existe = os.path.exists(db_path) if db_path else False
+        if db_existe:
+            status_banco = ft.Container(
+                ft.Row([
+                    ft.Icon(ft.Icons.CHECK_CIRCLE, color="#44cc88", size=16),
+                    ft.Text(f"Banco: {db_nome}", size=11, color="#44cc88", expand=True),
+                    ft.TextButton("Trocar", on_click=lambda e: self._ir_config(),
+                        style=ft.ButtonStyle(color=ACCENT,
+                            padding=ft.padding.all(0))),
+                ], spacing=6),
+                bgcolor="#0d3a1a", border_radius=8,
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+            )
+        else:
+            status_banco = ft.Container(
+                ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.Icons.WARNING_AMBER, color="#ffaa44", size=16),
+                        ft.Text("Banco local criado automaticamente",
+                                size=11, color="#ffaa44", expand=True),
+                    ], spacing=6),
+                    ft.Text(f"📁 {db_path}", size=10, color=TEXT3),
+                    ft.Text("Toque em ⚙️ para usar o banco do OneDrive",
+                            size=10, color=TEXT3),
+                ], spacing=4),
+                bgcolor="#2a1a00", border_radius=8,
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                border=ft.border.all(1, "#4a3000"),
+            )
+
         def entrar(e):
+            # Garante banco inicializado
+            try:
+                init_db(self.page)
+            except Exception:
+                pass
             l = (e_login.value or "").strip()
             s = (e_senha.value or "")
             if not l or not s:
@@ -340,39 +389,55 @@ class App:
         e_senha.on_submit = entrar
 
         self.page.controls.append(ft.Column([
+            # Header
             ft.Container(
                 ft.Column([
                     ft.Icon(ft.Icons.LIST_ALT, color=ACCENT, size=52),
                     ft.Text("Gerenciamento dos Reparos", size=18, color=ACCENT,
-                            weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
+                            weight=ft.FontWeight.BOLD,
+                            text_align=ft.TextAlign.CENTER),
                     ft.Text("Desenvolvido por Valdemir Vieira Alves",
-                            size=11, color=TEXT3, text_align=ft.TextAlign.CENTER),
+                            size=11, color=TEXT3,
+                            text_align=ft.TextAlign.CENTER),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
-                bgcolor=CARD, padding=28,
+                bgcolor=CARD, padding=24,
                 border=ft.border.only(bottom=ft.BorderSide(1, BORDER)),
             ),
+            # Form
             ft.Container(
                 ft.Column([
+                    status_banco,
+                    ft.Container(height=4),
                     ft.Text("🔐  Acesso ao Sistema", size=16, color=TEXT,
                             weight=ft.FontWeight.BOLD),
-                    ft.Text("Informe seu login e senha", size=12, color=TEXT3),
-                    ft.Container(height=6),
                     lbl("Login"), e_login,
                     lbl("Senha"), e_senha,
                     lbl_err,
                     botao("▶  ENTRAR", on_click=entrar, bg=SUCCESS, expand=True),
                     ft.Divider(color=BORDER),
-                    ft.TextButton("➕  Cadastrar Novo Usuário",
-                        on_click=lambda e: self._ir_cadastro(),
-                        style=ft.ButtonStyle(color=TEXT2)),
-                    ft.TextButton("⚙️  Configurar Banco",
+                    # Botão config banco destaque
+                    ft.ElevatedButton(
+                        "⚙️  Configurar / Trocar Banco",
                         on_click=lambda e: self._ir_config(),
-                        style=ft.ButtonStyle(color=ACCENT)),
-                    ft.TextButton("ℹ️  Sobre",
-                        on_click=lambda e: self._dialog_sobre(),
-                        style=ft.ButtonStyle(color=TEXT3)),
+                        style=ft.ButtonStyle(
+                            color={ft.ControlState.DEFAULT: "#a0c4ff"},
+                            bgcolor={ft.ControlState.DEFAULT: "#1a2a4a",
+                                     ft.ControlState.HOVERED: "#1f3a6b"},
+                            shape=ft.RoundedRectangleBorder(radius=8),
+                            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                        ),
+                        expand=True,
+                    ),
+                    ft.Row([
+                        ft.TextButton("➕  Cadastrar Usuário",
+                            on_click=lambda e: self._ir_cadastro(),
+                            style=ft.ButtonStyle(color=TEXT2)),
+                        ft.TextButton("ℹ️  Sobre",
+                            on_click=lambda e: self._dialog_sobre(),
+                            style=ft.ButtonStyle(color=TEXT3)),
+                    ], alignment=ft.MainAxisAlignment.CENTER),
                 ], spacing=8),
-                padding=24, expand=True,
+                padding=20, expand=True,
             ),
         ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO))
         self.page.update()
@@ -447,29 +512,37 @@ class App:
     # ── CONFIGURAR BANCO ─────────────────────────────────────────
     def _ir_config(self):
         self._clear()
+
+        db_atual = get_db_path(self.page)
+        db_existe = os.path.exists(db_atual) if db_atual else False
+
         lbl_status = ft.Text(
-            f"✅ Banco atual: {os.path.basename(get_db_path())}" if has_config()
-            else "⚠️ Nenhum banco configurado",
-            color="#44cc88" if has_config() else "#ffaa44",
+            f"✅ Banco atual: {os.path.basename(db_atual)}" if db_existe
+            else "⚠️ Banco local vazio (sem dados)",
+            color="#44cc88" if db_existe else "#ffaa44",
             size=12, text_align=ft.TextAlign.CENTER,
         )
-        e_adm   = inp("Senha do administrador", password=True)
-        e_path  = ft.TextField(
+        e_adm  = inp("Senha do administrador", password=True)
+        e_path = ft.TextField(
             hint_text="Toque em 🔍 Procurar para selecionar o arquivo .db",
             bgcolor=BG2, color=TEXT, border_color=BORDER,
             focused_border_color=ACCENT, border_radius=8,
             content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
-            text_size=13, expand=True, read_only=True,
+            text_size=12, expand=True, read_only=True,
             hint_style=ft.TextStyle(color=TEXT3),
-            value=get_db_path() or "",
         )
-        lbl_er  = ft.Text("", color="#ff6666", size=13)
-        lbl_ok  = ft.Text("", color="#44cc88", size=13)
+        lbl_er = ft.Text("", color="#ff6666", size=12)
+        lbl_ok = ft.Text("", color="#44cc88", size=12)
 
-        # FilePicker para selecionar o .db
+        # FilePicker
         def on_pick(ev):
             if ev.files and len(ev.files) > 0:
-                e_path.value = ev.files[0].path or ""
+                caminho = ev.files[0].path or ""
+                if caminho:
+                    e_path.value = caminho
+                    lbl_er.value = ""
+                    lbl_ok.value = f"Selecionado: {os.path.basename(caminho)}"
+                    lbl_ok.color = ACCENT
                 self.page.update()
 
         fp = ft.FilePicker(on_result=on_pick)
@@ -477,7 +550,7 @@ class App:
             self.page.overlay.append(fp)
         self.page.update()
 
-        def salvar(e):
+        def usar_banco_externo(e):
             if (e_adm.value or "") != ADMIN_PASSWORD:
                 lbl_er.value = "❌  Senha de administrador incorreta."
                 lbl_ok.value = ""
@@ -485,79 +558,125 @@ class App:
                 return
             p = (e_path.value or "").strip()
             if not p:
-                lbl_er.value = "⚠  Selecione o arquivo .db primeiro."
+                lbl_er.value = "⚠  Toque em 🔍 Procurar e selecione o arquivo .db"
                 self.page.update()
                 return
-            save_config(self.page, p)
-            ok = init_db()
-            if ok:
-                lbl_ok.value = f"✅ Banco configurado com sucesso!"
+            global _DB_PATH
+            _DB_PATH = p
+            try:
+                init_db(self.page)
+                lbl_ok.value = f"✅ Banco configurado: {os.path.basename(p)}"
                 lbl_er.value = ""
                 lbl_status.value = f"✅ Banco: {os.path.basename(p)}"
                 lbl_status.color = "#44cc88"
-            else:
-                lbl_er.value = "❌ Não foi possível inicializar o banco."
+            except Exception as ex:
+                lbl_er.value = f"❌ Erro: {ex}"
                 lbl_ok.value = ""
             self.page.update()
 
+        def usar_banco_local(e):
+            if (e_adm.value or "") != ADMIN_PASSWORD:
+                lbl_er.value = "❌  Senha de administrador incorreta."
+                self.page.update()
+                return
+            global _DB_PATH
+            _DB_PATH = None  # reseta para usar o padrão local
+            try:
+                init_db(self.page)
+                lbl_ok.value = f"✅ Banco local criado em: {get_db_path(self.page)}"
+                lbl_ok.color = "#44cc88"
+                lbl_er.value = ""
+                lbl_status.value = "✅ Usando banco local"
+                lbl_status.color = "#44cc88"
+            except Exception as ex:
+                lbl_er.value = f"❌ Erro: {ex}"
+            self.page.update()
+
         self.page.appbar = ft.AppBar(
-            title=ft.Text("Configurar Banco", color=TEXT),
+            title=ft.Text("⚙️  Configurar Banco", color=TEXT),
             bgcolor=CARD,
             leading=ft.IconButton(
                 ft.Icons.ARROW_BACK, icon_color=TEXT,
                 on_click=lambda e: self._ir_login()
             ),
         )
+
         self.page.controls.append(ft.ListView([
             ft.Container(ft.Column([
                 ft.Text("⚙️  Configuração do Banco de Dados",
                         size=16, color=ACCENT, weight=ft.FontWeight.BOLD),
-                ft.Container(height=4),
                 lbl_status,
-                ft.Container(height=12),
+                ft.Container(height=8),
 
-                # Instruções
+                # OPÇÃO 1 — Banco do OneDrive
                 ft.Container(
                     ft.Column([
-                        ft.Text("📱 Como encontrar o .db no tablet:",
-                                size=12, color=ACCENT, weight=ft.FontWeight.W_600),
+                        ft.Row([
+                            ft.Icon(ft.Icons.CLOUD, color=ACCENT, size=18),
+                            ft.Text("Opção 1 — Usar banco do OneDrive",
+                                    size=13, color=ACCENT,
+                                    weight=ft.FontWeight.W_600),
+                        ], spacing=8),
                         ft.Text(
-                            "1. Abra o OneDrive e baixe o SOLICITACOES.db\n"
-                            "2. O arquivo vai para a pasta Downloads\n"
-                            "3. Toque em 🔍 Procurar abaixo e navegue até Downloads\n"
-                            "4. Selecione o arquivo SOLICITACOES.db",
+                            "1. No OneDrive baixe o SOLICITACOES.db\n2. Ele vai para Downloads\n3. Toque em Procurar e selecione",
                             size=11, color=TEXT2,
                         ),
-                    ], spacing=4),
-                    bgcolor=BG2, border_radius=8, padding=12,
-                    border=ft.border.all(1, BORDER),
+                        ft.Container(height=6),
+                        lbl("Senha do Administrador *"),
+                        e_adm,
+                        ft.Container(height=6),
+                        lbl("Arquivo .db do OneDrive *"),
+                        ft.Row([
+                            e_path,
+                            ft.IconButton(
+                                ft.Icons.SEARCH, icon_color=ACCENT,
+                                tooltip="Procurar arquivo",
+                                on_click=lambda e: fp.pick_files(
+                                    dialog_title="Selecionar SOLICITACOES.db",
+                                    allowed_extensions=["db"],
+                                    allow_multiple=False,
+                                ),
+                            ),
+                        ], spacing=4),
+                        ft.Container(height=6),
+                        lbl_er,
+                        lbl_ok,
+                        botao("☁️  Usar Banco do OneDrive",
+                              on_click=usar_banco_externo,
+                              bg="#1a3a6b", expand=True),
+                    ], spacing=6),
+                    bgcolor=BG3, border_radius=10,
+                    border=ft.border.all(1, BORDER), padding=14,
                 ),
+
                 ft.Container(height=12),
 
-                lbl("Senha do Administrador *"), e_adm,
-                ft.Container(height=8),
-
-                lbl("Arquivo do Banco (.db) *"),
-                ft.Row([
-                    e_path,
-                    ft.IconButton(
-                        ft.Icons.SEARCH, icon_color=ACCENT,
-                        tooltip="Procurar arquivo .db",
-                        on_click=lambda e: fp.pick_files(
-                            dialog_title="Selecionar banco de dados",
-                            allowed_extensions=["db"],
-                            allow_multiple=False,
+                # OPÇÃO 2 — Banco local novo
+                ft.Container(
+                    ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.PHONE_ANDROID, color="#88ffaa", size=18),
+                            ft.Text("Opção 2 — Criar banco local no tablet",
+                                    size=13, color="#88ffaa",
+                                    weight=ft.FontWeight.W_600),
+                        ], spacing=8),
+                        ft.Text(
+                            "Cria um banco novo no tablet. Ideal para comecar do zero.\nOs dados ficam salvos internamente.",
+                            size=11, color=TEXT2,
                         ),
-                    ),
-                ], spacing=4),
-
-                ft.Container(height=8),
-                lbl_er,
-                lbl_ok,
-                botao("💾  Salvar Configuração", on_click=salvar,
-                      bg=SUCCESS, expand=True),
+                        ft.Container(height=6),
+                        ft.Text(f"📁 Local: {get_db_path(self.page)}",
+                                size=10, color=TEXT3),
+                        ft.Container(height=6),
+                        botao("📱  Criar/Usar Banco Local",
+                              on_click=usar_banco_local,
+                              bg=SUCCESS, expand=True),
+                    ], spacing=6),
+                    bgcolor=BG3, border_radius=10,
+                    border=ft.border.all(1, "#0d3a1a"), padding=14,
+                ),
                 ft.Container(height=24),
-            ], spacing=8), padding=16)
+            ], spacing=10), padding=16)
         ], expand=True))
         self.page.update()
 
