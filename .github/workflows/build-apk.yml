@@ -46,62 +46,18 @@ jobs:
           echo "flet==0.24.1" > requirements.txt
           pip install flet==0.24.1
 
-      - name: Criar script de patch do wakelock
+      - name: Compilar APK com patch wakelock
         run: |
-          cat > /tmp/watcher.py << 'PYEOF'
-          import os, time, pathlib
-
-          GRADLE = pathlib.Path.home() / ".pub-cache/hosted/pub.dev/wakelock_plus-1.4.0/android/build.gradle"
-
-          FIXADO = """group 'dev.fluttercommunity.plus.wakelock'
-          version '1.0-SNAPSHOT'
-
-          buildscript {
-              repositories { google(); mavenCentral() }
-              dependencies { classpath 'com.android.tools.build:gradle:7.3.0' }
-          }
-
-          apply plugin: 'com.android.library'
-
-          android {
-              compileSdkVersion 34
-              defaultConfig { minSdkVersion 21; targetSdkVersion 34 }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
-          }
-
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-          }
-          """
-
-          print("[watcher] iniciado, aguardando wakelock_plus...")
-          while True:
-              try:
-                  if GRADLE.exists():
-                      txt = GRADLE.read_text()
-                      if "flutter." in txt:
-                          GRADLE.write_text(FIXADO)
-                          print("[watcher] patch aplicado!")
-              except Exception as e:
-                  print(f"[watcher] erro: {e}")
-              time.sleep(1)
-          PYEOF
-
-      - name: Compilar APK
-        run: |
-          python /tmp/watcher.py &
+          python watcher.py &
           WPID=$!
-          echo "Watcher PID: $WPID"
+          echo "Watcher PID $WPID iniciado"
           flet build apk --verbose 2>&1
           CODE=$?
           kill $WPID 2>/dev/null || true
           exit $CODE
 
       - name: Listar APKs
-        run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK encontrado"
+        run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK"
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4.6.2
