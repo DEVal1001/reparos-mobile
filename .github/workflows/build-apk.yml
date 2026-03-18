@@ -27,13 +27,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Flutter 3.22.3 — compatível com Flet 0.24.1 e wakelock_plus 1.4.0
       - name: Instalar Flutter 3.22.3
         uses: subosito/flutter-action@v2.18.0
         with:
           flutter-version: "3.22.3"
           channel: stable
-          cache: true
+          cache: false   # sem cache — garante versão correta
+
+      - name: Verificar versão do Flutter
+        run: flutter --version
 
       - name: Aceitar licenças Android SDK
         run: |
@@ -46,6 +48,24 @@ jobs:
 
       - name: Instalar Flet CLI
         run: pip install flet==0.24.1
+
+      - name: Pré-popular pub cache e corrigir wakelock_plus
+        run: |
+          # Cria projeto temporário para popular o pub cache
+          mkdir -p /tmp/prebuild && cd /tmp/prebuild
+          flutter create --platforms android --project-name prebuild . -q
+          # Adiciona wakelock_plus ao pubspec para fazer o download
+          echo "  wakelock_plus: 1.4.0" >> pubspec.yaml
+          flutter pub get || true
+          # Corrige o build.gradle do wakelock_plus no cache
+          find $HOME/.pub-cache -name "build.gradle" -path "*wakelock_plus*" | while read f; do
+            echo "Corrigindo: $f"
+            sed -i 's/flutter\.compileSdkVersion/34/g' "$f"
+            sed -i 's/flutter\.minSdkVersion/21/g' "$f"
+            sed -i 's/flutter\.targetSdkVersion/34/g' "$f"
+            cat "$f"
+          done
+          echo "Correção concluída!"
 
       - name: Compilar APK
         run: flet build apk --verbose 2>&1
