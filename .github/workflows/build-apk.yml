@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar código
+      - name: Baixar codigo
         uses: actions/checkout@v4.2.2
 
       - name: Configurar Python 3.11
@@ -34,73 +34,71 @@ jobs:
           channel: stable
           cache: false
 
-      - name: Aceitar licenças Android SDK
+      - name: Aceitar licencas Android SDK
         run: |
           mkdir -p $ANDROID_SDK_ROOT/licenses
-          printf '24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\n84831b9409646a918e30573bab4c9c91346d8abd' \
-            > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          printf 'd975f751698a77b662f1254ddbeed3901e976f5a' \
-            > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
+          printf '24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\n84831b9409646a918e30573bab4c9c91346d8abd' > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          printf 'd975f751698a77b662f1254ddbeed3901e976f5a' > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
           yes | flutter doctor --android-licenses || true
 
-      - name: Garantir flet 0.24.1 no requirements
+      - name: Instalar flet 0.24.1
         run: |
           echo "flet==0.24.1" > requirements.txt
           pip install flet==0.24.1
-          echo "✅ requirements.txt:"
-          cat requirements.txt
 
-      - name: Compilar APK (com patch wakelock_plus)
+      - name: Criar script de patch do wakelock
         run: |
-          GRADLE_FILE="$HOME/.pub-cache/hosted/pub.dev/wakelock_plus-1.4.0/android/build.gradle"
+          cat > /tmp/watcher.py << 'PYEOF'
+          import os, time, pathlib
 
-          GRADLE_FIXADO='group '"'"'dev.fluttercommunity.plus.wakelock'"'"'
-version '"'"'1.0-SNAPSHOT'"'"'
+          GRADLE = pathlib.Path.home() / ".pub-cache/hosted/pub.dev/wakelock_plus-1.4.0/android/build.gradle"
 
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath '"'"'com.android.tools.build:gradle:7.3.0'"'"'
-    }
-}
+          FIXADO = """group 'dev.fluttercommunity.plus.wakelock'
+          version '1.0-SNAPSHOT'
 
-apply plugin: '"'"'com.android.library'"'"'
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:7.3.0' }
+          }
 
-android {
-    compileSdkVersion 34
-    defaultConfig {
-        minSdkVersion 21
-        targetSdkVersion 34
-    }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-}
+          apply plugin: 'com.android.library'
 
-dependencies {
-    implementation '"'"'androidx.appcompat:appcompat:1.6.1'"'"'
-}'
+          android {
+              compileSdkVersion 34
+              defaultConfig { minSdkVersion 21; targetSdkVersion 34 }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+          }
 
-          (
-            while true; do
-              if [ -f "$GRADLE_FILE" ] && grep -q "flutter\." "$GRADLE_FILE" 2>/dev/null; then
-                printf '%s\n' "$GRADLE_FIXADO" > "$GRADLE_FILE"
-                echo "[WATCHER] Patch aplicado!"
-              fi
-              sleep 1
-            done
-          ) &
-          WATCHER_PID=$!
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          """
 
+          print("[watcher] iniciado, aguardando wakelock_plus...")
+          while True:
+              try:
+                  if GRADLE.exists():
+                      txt = GRADLE.read_text()
+                      if "flutter." in txt:
+                          GRADLE.write_text(FIXADO)
+                          print("[watcher] patch aplicado!")
+              except Exception as e:
+                  print(f"[watcher] erro: {e}")
+              time.sleep(1)
+          PYEOF
+
+      - name: Compilar APK
+        run: |
+          python /tmp/watcher.py &
+          WPID=$!
+          echo "Watcher PID: $WPID"
           flet build apk --verbose 2>&1
-          BUILD_CODE=$?
-
-          kill $WATCHER_PID 2>/dev/null || true
-          exit $BUILD_CODE
+          CODE=$?
+          kill $WPID 2>/dev/null || true
+          exit $CODE
 
       - name: Listar APKs
         run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK encontrado"
