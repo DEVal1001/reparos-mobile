@@ -43,78 +43,66 @@ jobs:
             > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
           yes | flutter doctor --android-licenses || true
 
-      - name: Instalar flet 0.24.1
-        run: pip install flet==0.24.1
+      - name: Garantir flet 0.24.1 no requirements
+        run: |
+          echo "flet==0.24.1" > requirements.txt
+          pip install flet==0.24.1
+          echo "✅ requirements.txt:"
+          cat requirements.txt
 
-      - name: Compilar APK (com patch automático do wakelock_plus)
+      - name: Compilar APK (com patch wakelock_plus)
         run: |
           GRADLE_FILE="$HOME/.pub-cache/hosted/pub.dev/wakelock_plus-1.4.0/android/build.gradle"
 
           GRADLE_FIXADO='group '"'"'dev.fluttercommunity.plus.wakelock'"'"'
-          version '"'"'1.0-SNAPSHOT'"'"'
+version '"'"'1.0-SNAPSHOT'"'"'
 
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath '"'"'com.android.tools.build:gradle:7.3.0'"'"'
-              }
-          }
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath '"'"'com.android.tools.build:gradle:7.3.0'"'"'
+    }
+}
 
-          apply plugin: '"'"'com.android.library'"'"'
+apply plugin: '"'"'com.android.library'"'"'
 
-          android {
-              compileSdkVersion 34
-              defaultConfig {
-                  minSdkVersion 21
-                  targetSdkVersion 34
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
-          }
+android {
+    compileSdkVersion 34
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 34
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
 
-          dependencies {
-              implementation '"'"'androidx.appcompat:appcompat:1.6.1'"'"'
-          }'
+dependencies {
+    implementation '"'"'androidx.appcompat:appcompat:1.6.1'"'"'
+}'
 
-          # Inicia watcher em background — patcha o arquivo logo após o download
           (
-            PATCHED=0
             while true; do
-              if [ -f "$GRADLE_FILE" ] && [ $PATCHED -eq 0 ]; then
-                if grep -q "flutter\." "$GRADLE_FILE" 2>/dev/null; then
-                  echo "[WATCHER] wakelock_plus encontrado — aplicando patch..."
-                  printf '%s\n' "$GRADLE_FIXADO" > "$GRADLE_FILE"
-                  echo "[WATCHER] Patch OK! Conteúdo:"
-                  cat "$GRADLE_FILE"
-                  PATCHED=1
-                fi
-              fi
-              # Re-patcha se o arquivo for restaurado
               if [ -f "$GRADLE_FILE" ] && grep -q "flutter\." "$GRADLE_FILE" 2>/dev/null; then
                 printf '%s\n' "$GRADLE_FIXADO" > "$GRADLE_FILE"
-                echo "[WATCHER] Re-patch aplicado"
+                echo "[WATCHER] Patch aplicado!"
               fi
               sleep 1
             done
           ) &
           WATCHER_PID=$!
 
-          echo "Watcher PID: $WATCHER_PID"
-          echo "Iniciando flet build apk..."
-
           flet build apk --verbose 2>&1
           BUILD_CODE=$?
 
           kill $WATCHER_PID 2>/dev/null || true
-          echo "Build finalizado com código: $BUILD_CODE"
           exit $BUILD_CODE
 
-      - name: Listar APKs gerados
+      - name: Listar APKs
         run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK encontrado"
 
       - name: Publicar APK
