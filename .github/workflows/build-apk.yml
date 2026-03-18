@@ -36,26 +36,40 @@ jobs:
             > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
           yes | sdkmanager --licenses || true
 
-      - name: Limpar flet antigo e instalar flet 0.27.6
+      - name: REMOVER Flutter pré-instalado do runner
         run: |
-          # Remove qualquer flet existente no sistema
-          pip uninstall flet flet-cli flet-runtime flet-embed flet-web -y 2>/dev/null || true
-          pip cache purge
-          # Instala versão correta
-          pip install "flet==0.27.6" "flet-cli==0.27.6" --no-cache-dir
-          # Confirma
-          python -c "import flet; print('flet version:', flet.version.version)"
-          # Mostra onde está o executável flet
-          python -c "import shutil; print('flet em:', shutil.which('flet'))"
+          echo "=== Flutter ANTES ==="
+          which flutter 2>/dev/null && flutter --version || echo "Flutter não encontrado no PATH"
+          
+          # Remove o Flutter pré-instalado pelo runner
+          sudo rm -rf /opt/hostedtoolcache/flutter 2>/dev/null || true
+          sudo rm -f /usr/local/bin/flutter 2>/dev/null || true
+          sudo rm -f /usr/bin/flutter 2>/dev/null || true
+          
+          # Limpa o cache do shell
+          hash -r 2>/dev/null || true
+          
+          echo "=== Flutter DEPOIS ==="
+          which flutter 2>/dev/null && echo "AINDA PRESENTE - problema!" || echo "✅ Flutter removido com sucesso"
 
-      # NÃO instala Flutter — o flet 0.27.6 instala o Flutter 3.27.4 automaticamente
-      - name: Compilar APK
+      - name: Instalar flet 0.27.6
         run: |
-          # Garante que o flet do PATH é o 0.27.6, não um sistema antigo
-          FLET_BIN=$(python -c "import sys, os; print(os.path.join(os.path.dirname(sys.executable), 'flet'))")
-          echo "Usando flet em: $FLET_BIN"
-          $FLET_BIN --version
-          $FLET_BIN build apk --verbose 2>&1
+          pip install "flet==0.27.6" "flet-cli==0.27.6" --force-reinstall --no-cache-dir
+          python -c "import flet; print('✅ flet version:', flet.version.version)"
+          
+          # Mostra qual flet será usado
+          FLET=$(python -c "import sys,os; print(os.path.join(os.path.dirname(sys.executable),'flet'))")
+          echo "flet binário: $FLET"
+          $FLET --version
+
+      - name: Compilar APK (flet instala Flutter 3.27.4 automaticamente)
+        run: |
+          FLET=$(python -c "import sys,os; print(os.path.join(os.path.dirname(sys.executable),'flet'))")
+          echo "Usando: $FLET"
+          $FLET --version
+          
+          # Executa o build — flet 0.27.6 vai baixar e instalar Flutter 3.27.4
+          $FLET build apk --verbose 2>&1
 
       - name: Listar APKs gerados
         run: find build/ -name "*.apk" 2>/dev/null || echo "Nenhum APK encontrado"
