@@ -76,30 +76,30 @@ SIT_CORES = {
 }
 
 # ── Configuração persistente ──────────────────────────────────────
-# Único lugar onde o caminho do banco é mantido
-_DB_PATH  = None   # caminho real em uso
-_PAGE_REF = None   # referência global à page
+_PAGE_REF  = None   # referência global à page
+_DB_PATH   = None   # caminho permanente em uso
+_SYNC_PATH = None   # caminho de sincronização (Download/OneDrive)
 
-def _get_config_file():
-    """
-    Retorna o caminho do arquivo config.json.
-    Usa _PAGE_REF se disponível, senão usa pasta home.
-    """
+def _app_dir():
+    """Pasta permanente do app no Android (sobrevive entre sessões)."""
     try:
         if _PAGE_REF and hasattr(_PAGE_REF, "app_data_dir"):
-            base = str(_PAGE_REF.app_data_dir or "")
-            if base and base != "None":
-                os.makedirs(base, exist_ok=True)
-                return os.path.join(base, "reparos_config.json")
+            d = str(_PAGE_REF.app_data_dir or "")
+            if d and d != "None":
+                os.makedirs(d, exist_ok=True)
+                return d
     except Exception:
         pass
-    base = os.path.expanduser("~")
-    return os.path.join(base, "reparos_config.json")
+    d = os.path.expanduser("~")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+def _config_file():
+    return os.path.join(_app_dir(), "reparos_config.json")
 
 def load_config():
-    """Lê config.json. Retorna dict ou {}."""
     try:
-        p = _get_config_file()
+        p = _config_file()
         if os.path.exists(p):
             with open(p, encoding="utf-8") as f:
                 return json.load(f)
@@ -107,61 +107,66 @@ def load_config():
         print(f"load_config: {e}")
     return {}
 
-def save_config(db_path):
-    """Salva o caminho do banco no config.json."""
-    global _DB_PATH
-    _DB_PATH = db_path          # atualiza imediatamente em memória
+def save_config(db_path, sync_path=""):
+    global _DB_PATH, _SYNC_PATH
+    _DB_PATH   = db_path
+    _SYNC_PATH = sync_path
     try:
-        cfg = {"db_path": db_path}
-        p   = _get_config_file()
-        with open(p, "w", encoding="utf-8") as f:
+        cfg = {"db_path": db_path, "sync_path": sync_path}
+        with open(_config_file(), "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
-        print(f"save_config OK: {p} -> {db_path}")
+        print(f"save_config: db={db_path} sync={sync_path}")
     except Exception as e:
         print(f"save_config erro: {e}")
 
-# ── Database ──────────────────────────────────────────────────────
-_DB_PATH = None   # só declarado aqui — sem duplicata
-
-def get_db_path(page=None):
-    """
-    Retorna o caminho atual do banco.
-    Ordem de prioridade:
-      1. _DB_PATH já definido em memória
-      2. config.json salvo no disco
-      3. pasta interna do app (app_data_dir)
-      4. pasta home
-    """
-    global _DB_PATH
-    # 1. Já definido
-    if _DB_PATH:
-        return _DB_PATH
-    # 2. Config salvo
+def _carregar_config_startup():
+    """Chamado no início — carrega config salvo."""
+    global _DB_PATH, _SYNC_PATH
     cfg = load_config()
-    saved = cfg.get("db_path", "")
-    if saved and os.path.exists(saved):
-        _DB_PATH = saved
-        print(f"get_db_path: carregado do config: {_DB_PATH}")
+    if cfg.get("db_path") and os.path.exists(cfg["db_path"]):
+        _DB_PATH   = cfg["db_path"]
+        _SYNC_PATH = cfg.get("sync_path", "")
+        print(f"startup: banco={_DB_PATH}")
+        return True
+    return False
+
+# ── Database ──────────────────────────────────────────────────────
+def get_db_path(page=None):
+    global _DB_PATH
+    if _DB_PATH and os.path.exists(_DB_PATH):
         return _DB_PATH
-    # 3. Pasta interna do app
-    p = page or _PAGE_REF
-    try:
-        if p and hasattr(p, "app_data_dir") and p.app_data_dir:
-            base = str(p.app_data_dir)
-            if base and base != "None":
-                os.makedirs(base, exist_ok=True)
-                _DB_PATH = os.path.join(base, "reparos.db")
-                print(f"get_db_path: app_data_dir: {_DB_PATH}")
-                return _DB_PATH
-    except Exception:
-        pass
-    # 4. Fallback home
-    try:
-        _DB_PATH = os.path.join(os.path.expanduser("~"), "reparos.db")
-    except Exception:
-        _DB_PATH = "reparos.db"
-    print(f"get_db_path: fallback: {_DB_PATH}")
+    # Tenta carregar do config
+    cfg = load_config()
+    p = cfg.get("db_path", "")
+    if p and os.path.exists(p):
+        _DB_PATH = p
+        return _DB_PATH
+    # Cria banco local na pasta do app
+    local = os.path.join(_app_dir(), "reparos.db")
+    _DB_PATH = local
     return _DB_PATH
+
+def sincronizar_para_origem():
+    """
+    Copia o banco permanente de volta para a pasta de sincronização
+    (pasta Download ou OneDrive que o usuário especificou).
+    """
+    global _SYNC_PATH
+    if not _SYNC_PATH:
+        cfg = load_config()
+        _SYNC_PATH = cfg.get("sync_path", "")
+    if not _SYNC_PATH:
+        return False, "Nenhuma pasta de sincronização configurada"
+    try:
+        os.makedirs(_SYNC_PATH, exist_ok=True)
+        nome    = os.path.basename(_DB_PATH or "reparos.db")
+        destino = os.path.join(_SYNC_PATH, nome)
+        shutil.copy2(_DB_PATH, destino)
+        print(f"sync OK: {_DB_PATH} -> {destino}")
+        return True, destino
+    except Exception as e:
+        print(f"sync erro: {e}")
+        return False, str(e)
 
 def get_conn(page=None):
     conn = sqlite3.connect(get_db_path(page), timeout=10)
@@ -367,25 +372,29 @@ class App:
     def __init__(self, page: ft.Page):
         global _PAGE_REF
         self.page      = page
-        _PAGE_REF      = page   # referência global para funções fora da classe
+        _PAGE_REF      = page
         self.usuario   = None
         self.login_str = ""
         try:
             self._setup_page()
         except Exception as e:
             print(f"setup_page erro: {e}")
-        # Mostra login PRIMEIRO, init_db depois
+        # Carrega config salvo (banco configurado anteriormente)
+        try:
+            _carregar_config_startup()
+        except Exception as e:
+            print(f"config startup erro: {e}")
+        # Mostra login
         try:
             self._ir_login()
         except Exception as e:
-            # Se falhar, mostra tela de erro mínima
             print(f"ir_login erro: {e}")
             self.page.controls.clear()
             self.page.controls.append(
                 ft.Text(f"Erro ao iniciar: {e}", color="red", size=14)
             )
             self.page.update()
-        # Init DB após mostrar tela
+        # Init DB
         try:
             init_db(page)
         except Exception as e:
@@ -609,49 +618,56 @@ class App:
     # ── CONFIGURAR BANCO ─────────────────────────────────────────
     def _ir_config(self):
         self._clear()
+        global _DB_PATH, _SYNC_PATH
 
-        db_atual = get_db_path(self.page)
+        # Status atual
+        db_atual  = get_db_path(self.page)
         db_existe = os.path.exists(db_atual) if db_atual else False
+        cfg       = load_config()
+        sync_atual = cfg.get("sync_path", "")
 
-        lbl_status = ft.Text(
-            f"✅ Banco atual: {os.path.basename(db_atual)}" if db_existe
-            else "⚠️ Banco local vazio (sem dados)",
-            color="#44cc88" if db_existe else "#ffaa44",
-            size=12, text_align="center",
-        )
         e_adm  = inp("Senha do administrador", password=True)
         e_path = ft.TextField(
-            hint_text="Procure o arquivo ou digite o caminho manualmente",
+            hint_text="Toque em 🔍 para selecionar o SOLICITACOES.db",
             bgcolor=BG2, color=TEXT, border_color=BORDER,
             focused_border_color=ACCENT, border_radius=8,
             content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
             text_size=12, expand=True,
             hint_style=ft.TextStyle(color=TEXT3),
         )
-        lbl_er = ft.Text("", color="#ff6666", size=12)
-        lbl_ok = ft.Text("", color="#44cc88", size=12)
+        # Campo para a pasta de sincronização (onde copiar de volta)
+        e_sync = ft.TextField(
+            hint_text="Ex: /storage/emulated/0/Download",
+            value=sync_atual,
+            bgcolor=BG2, color=TEXT, border_color=BORDER,
+            focused_border_color=ACCENT, border_radius=8,
+            content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
+            text_size=12, expand=True,
+            hint_style=ft.TextStyle(color=TEXT3),
+        )
+        lbl_er  = ft.Text("", color="#ff6666", size=12)
+        lbl_ok  = ft.Text("", color="#44cc88", size=12)
 
-        # FilePicker - Flet 0.24.1 compatível
+        # FilePicker para selecionar o .db
         def on_pick(ev):
             try:
-                if ev.files and len(ev.files) > 0:
-                    f = ev.files[0]
-                    caminho = getattr(f, "path", None) or getattr(f, "name", "") or ""
+                if ev.files and ev.files[0]:
+                    caminho = getattr(ev.files[0], "path", "") or ""
                     if caminho:
                         e_path.value = caminho
                         lbl_er.value = ""
-                        lbl_ok.value = f"✅ Selecionado: {os.path.basename(caminho)}"
-                        lbl_ok.color = "#44cc88"
+                        lbl_ok.value = f"Selecionado: {os.path.basename(caminho)}"
+                        lbl_ok.color = ACCENT
                     else:
-                        lbl_er.value = "⚠ Não foi possível obter o caminho. Digite manualmente."
+                        lbl_er.value = "⚠ Caminho não obtido — digite manualmente"
                 self.page.update()
             except Exception as ex:
-                print(f"on_pick erro: {ex}")
+                lbl_er.value = f"Erro picker: {ex}"
+                self.page.update()
 
-        # Adiciona FilePicker ao overlay ANTES de montar a tela
         fp = ft.FilePicker(on_result=on_pick)
         self.page.overlay.append(fp)
-        self.page.update()  # registra o fp no overlay
+        self.page.update()
 
         def usar_banco_externo(e):
             if (e_adm.value or "") != ADMIN_PASSWORD:
@@ -659,21 +675,42 @@ class App:
                 lbl_ok.value = ""
                 self.page.update()
                 return
-            p = (e_path.value or "").strip()
-            if not p:
-                lbl_er.value = "⚠  Toque em 🔍 Procurar e selecione o arquivo .db"
+            origem = (e_path.value or "").strip()
+            if not origem:
+                lbl_er.value = "⚠  Selecione ou digite o caminho do banco."
                 self.page.update()
                 return
-            global _DB_PATH
-            _DB_PATH = p
+
+            lbl_ok.value = "⏳ Copiando banco para pasta permanente..."
+            lbl_ok.color = ACCENT
+            self.page.update()
+
             try:
+                # Copia o .db para a pasta permanente do app
+                # (evita o problema do cache temporário do FilePicker)
+                nome_db  = os.path.basename(origem)
+                destino  = os.path.join(_app_dir(), nome_db)
+                shutil.copy2(origem, destino)
+                print(f"DB copiado: {origem} -> {destino}")
+
+                # Pasta de sincronização (onde copiar de volta após salvar)
+                sync = (e_sync.value or "").strip()
+                if not sync:
+                    # Padrão: mesma pasta de origem (se acessível)
+                    sync = os.path.dirname(origem)
+
+                # Atualiza variáveis globais e salva config
+                global _DB_PATH, _SYNC_PATH
+                _DB_PATH   = destino
+                _SYNC_PATH = sync
+                save_config(destino, sync)
+
+                # Inicializa banco
                 init_db(self.page)
-                # Salva config — próxima abertura já carrega este banco
-                save_config(p)
-                lbl_ok.value = f"✅ Banco configurado e salvo!"
+
+                lbl_ok.value = f"✅ Banco configurado! | {nome_db} | Sync: {sync}"
+                lbl_ok.color = "#44cc88"
                 lbl_er.value = ""
-                lbl_status.value = f"✅ Banco: {os.path.basename(p)}"
-                lbl_status.color = "#44cc88"
             except Exception as ex:
                 lbl_er.value = f"❌ Erro: {ex}"
                 lbl_ok.value = ""
@@ -684,19 +721,16 @@ class App:
                 lbl_er.value = "❌  Senha de administrador incorreta."
                 self.page.update()
                 return
-            global _DB_PATH
-            _DB_PATH = None  # reseta para recalcular com app_data_dir
+            global _DB_PATH, _SYNC_PATH
+            _DB_PATH   = None  # força recálculo
+            _SYNC_PATH = ""
             try:
-                # Força recálculo do caminho padrão
                 db = get_db_path(self.page)
                 init_db(self.page)
-                # Salva config do banco local para persistir
-                save_config(db)
-                lbl_ok.value = f"✅ Banco local criado e salvo!"
+                save_config(db, "")
+                lbl_ok.value = f"✅ Banco local: {db}"
                 lbl_ok.color = "#44cc88"
                 lbl_er.value = ""
-                lbl_status.value = "✅ Usando banco local"
-                lbl_status.color = "#44cc88"
             except Exception as ex:
                 lbl_er.value = f"❌ Erro: {ex}"
             self.page.update()
@@ -712,83 +746,87 @@ class App:
 
         self.page.controls.append(ft.ListView([
             ft.Container(ft.Column([
-                ft.Text("⚙️  Configuração do Banco de Dados",
-                        size=16, color=ACCENT, weight="bold"),
-                lbl_status,
+
+                ft.Text("⚙️  Configuração do Banco", size=16,
+                        color=ACCENT, weight="bold"),
+
+                # Status atual
+                ft.Container(
+                    ft.Column([
+                        ft.Text("Status atual:", size=11, color=TEXT3),
+                        ft.Text(
+                            f"📂 Banco: {db_atual or 'Não configurado'}",
+                            size=11, color="#44cc88" if db_existe else "#ffaa44",
+                            selectable=True,
+                        ),
+                        ft.Text(
+                            f"🔄 Sync: {sync_atual or 'Não configurado'}",
+                            size=11, color=TEXT3, selectable=True,
+                        ),
+                    ], spacing=3),
+                    bgcolor=BG2, border_radius=8, padding=10,
+                    border=ft.border.all(1, BORDER),
+                ),
                 ft.Container(height=8),
 
-                # OPÇÃO 1 — Banco do OneDrive
+                # Instruções
                 ft.Container(
                     ft.Column([
-                        ft.Row([
-                            ft.Icon(ft.icons.CLOUD, color=ACCENT, size=18),
-                            ft.Text("Opção 1 — Usar banco do OneDrive",
-                                    size=13, color=ACCENT,
-                                    weight="w600"),
-                        ], spacing=8),
+                        ft.Text("ℹ️ Como configurar:", size=12,
+                                color=ACCENT, weight="bold"),
                         ft.Text(
-                            "1. No OneDrive baixe o SOLICITACOES.db\n2. Ele vai para Downloads\n3. Toque em Procurar e selecione",
-                            size=11, color=TEXT2,
+                            "1. Baixe o SOLICITACOES.db do OneDrive para Downloads\n2. Toque em Procurar e selecione\n3. O app copia e sincroniza automaticamente",
                         ),
-                        ft.Container(height=6),
-                        lbl("Senha do Administrador *"),
-                        e_adm,
-                        ft.Container(height=6),
-                        lbl("Arquivo .db do OneDrive *"),
-                        ft.Row([
-                            e_path,
-                            ft.IconButton(
-                                ft.icons.SEARCH, icon_color=ACCENT,
-                                tooltip="Procurar arquivo",
-                                on_click=lambda e: fp.pick_files(
-                                    dialog_title="Selecionar SOLICITACOES.db",
-                                    allow_multiple=False,
-                                ),
-                            ),
-                        ], spacing=4),
-                        ft.Container(height=6),
-                        lbl_er,
-                        lbl_ok,
-                        botao("☁️  Usar Banco do OneDrive",
-                              on_click=usar_banco_externo,
-                              bg="#1a3a6b", expand=True),
-                    ], spacing=6),
-                    bgcolor=BG3, border_radius=10,
-                    border=ft.border.all(1, BORDER), padding=14,
+                    ], spacing=4),
+                    bgcolor=BG3, border_radius=8, padding=10,
+                    border=ft.border.all(1, BORDER),
                 ),
+                ft.Container(height=10),
 
-                ft.Container(height=12),
+                # Formulário
+                lbl("Senha do Administrador *"),
+                e_adm,
+                ft.Container(height=6),
 
-                # OPÇÃO 2 — Banco local novo
-                ft.Container(
-                    ft.Column([
-                        ft.Row([
-                            ft.Icon(ft.icons.PHONE_ANDROID, color="#88ffaa", size=18),
-                            ft.Text("Opção 2 — Criar banco local no tablet",
-                                    size=13, color="#88ffaa",
-                                    weight="w600"),
-                        ], spacing=8),
-                        ft.Text(
-                            "Cria um banco novo no tablet. Ideal para comecar do zero.\nOs dados ficam salvos internamente.",
-                            size=11, color=TEXT2,
+                lbl("Arquivo .db (OneDrive/Downloads) *"),
+                ft.Row([
+                    e_path,
+                    ft.IconButton(
+                        ft.icons.SEARCH, icon_color=ACCENT,
+                        on_click=lambda e: fp.pick_files(
+                            dialog_title="Selecionar banco .db",
+                            allow_multiple=False,
                         ),
-                        ft.Container(height=6),
-                        ft.Text(f"📁 Local: {get_db_path(self.page)}", selectable=True,
-                                size=10, color=TEXT3),
-                        ft.Container(height=6),
-                        botao("📱  Criar/Usar Banco Local",
-                              on_click=usar_banco_local,
-                              bg=SUCCESS, expand=True),
-                    ], spacing=6),
-                    bgcolor=BG3, border_radius=10,
-                    border=ft.border.all(1, "#0d3a1a"), padding=14,
+                    ),
+                ], spacing=4),
+                ft.Container(height=6),
+
+                lbl("Pasta de sincronização (opcional)"),
+                ft.Text(
+                    "Onde copiar o banco após cada salvar (ex: /storage/emulated/0/Download)",
+                    size=10, color=TEXT3,
                 ),
+                e_sync,
+                ft.Container(height=10),
+
+                lbl_er,
+                lbl_ok,
+                ft.Container(height=6),
+
+                botao("☁️  Usar Banco do OneDrive/Downloads",
+                      on_click=usar_banco_externo,
+                      bg="#1a3a6b", expand=True),
+                ft.Container(height=8),
+                botao("📱  Criar Banco Local (sem OneDrive)",
+                      on_click=usar_banco_local,
+                      bg=SUCCESS, expand=True),
                 ft.Container(height=24),
-            ], spacing=10), padding=16)
+
+            ], spacing=8), padding=16)
         ], expand=True))
         self.page.update()
 
-    # ── LISTA ────────────────────────────────────────────────────
+    # ── LISTA     # ── LISTA ────────────────────────────────────────────────────
     def _ir_lista(self):
         self._clear()
         self._filtros   = {"q": "", "nucleo": "", "situacao": ""}
@@ -1103,8 +1141,6 @@ class App:
                 # ── Abre conexão com isolation_level None (autocommit) ──
                 db_path = get_db_path(self.page)
                 print(f"SALVANDO em: {db_path}")  # debug
-                self._snack(f"💾 Gravando em: {os.path.basename(db_path)}...", "#1a3a6b")
-                self.page.update()
                 conn = sqlite3.connect(db_path, timeout=15,
                                        isolation_level=None)
                 conn.row_factory = sqlite3.Row
@@ -1479,17 +1515,30 @@ class App:
 
     # ── DIALOGS ──────────────────────────────────────────────────
     def _salvar_excel_bg(self):
-        """Gera Excel e faz checkpoint — chamado em background após cada save."""
+        """
+        Chamado em background após cada save:
+        1. Copia banco permanente de volta para pasta de sync (OneDrive/Downloads)
+        2. Gera Excel na pasta do banco permanente
+        """
+        import time; time.sleep(0.3)
         try:
-            # Pequena pausa para garantir que o WAL já foi flushed
-            import time; time.sleep(0.5)
-            ok, resultado = exportar_excel(self.page)
-            if ok:
+            # 1. Sincroniza banco para pasta de origem (OneDrive/Downloads)
+            ok_sync, msg_sync = sincronizar_para_origem()
+            if ok_sync:
+                print(f"Sync OK: {msg_sync}")
+            else:
+                print(f"Sync ignorado: {msg_sync}")
+        except Exception as e:
+            print(f"sync erro: {e}")
+        try:
+            # 2. Gera Excel na mesma pasta do banco permanente
+            ok_xl, resultado = exportar_excel(self.page)
+            if ok_xl:
                 print(f"Excel gerado: {resultado}")
             else:
                 print(f"Excel erro: {resultado}")
         except Exception as e:
-            print(f"_salvar_excel_bg: {e}")
+            print(f"excel erro: {e}")
 
     def _dialog_sync(self):
         """Exporta Excel e faz checkpoint do WAL (sincroniza banco)."""
