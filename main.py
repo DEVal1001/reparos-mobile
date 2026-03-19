@@ -1083,9 +1083,17 @@ class App:
                 "localizacao":    (e_loc.value or "").strip(),
             }
             try:
-                conn = get_conn(self.page)
+                # ── Abre conexão com isolation_level None (autocommit) ──
+                db_path = get_db_path(self.page)
+                conn = sqlite3.connect(db_path, timeout=15,
+                                       isolation_level=None)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=FULL")
+                conn.execute("PRAGMA foreign_keys=ON")
+
                 if modo == "novo":
-                    conn.execute("""
+                    cur = conn.execute("""
                         INSERT INTO solicitacoes
                         (data_abertura,solicitacao,nucleo,solicitante,endereco,bairro,
                          distrito,categoria,subcategoria,encarregado,situacao,
@@ -1095,8 +1103,15 @@ class App:
                          :distrito,:categoria,:subcategoria,:encarregado,:situacao,
                          :data_inicio,:data_conclusao,:observacao,:localizacao)
                     """, reg)
-                    conn.commit()
+                    new_id = cur.lastrowid
+                    # Força flush completo para o arquivo físico
+                    conn.execute("PRAGMA wal_checkpoint(FULL)")
                     conn.close()
+                    # Gera Excel em background
+                    threading.Thread(
+                        target=self._salvar_excel_bg,
+                        daemon=True
+                    ).start()
                     self._snack(f"✅  Solicitação {sol} criada!")
                     self._ir_lista()
                 else:
@@ -1113,22 +1128,39 @@ class App:
                             atualizado_em=datetime('now','localtime')
                         WHERE id=:id
                     """, reg)
-                    conn.commit()
-                    novo  = _snap()
-                    diff  = [
-                        (k, _snap_orig.get(k, ""), novo.get(k, ""))
+                    novo = _snap()
+                    diff = [
+                        (k, _snap_orig.get(k,""), novo.get(k,""))
                         for k in novo
-                        if _snap_orig.get(k, "") != novo.get(k, "")
+                        if _snap_orig.get(k,"") != novo.get(k,"")
                     ]
+                    # Salva histórico na mesma conexão
+                    if diff:
+                        now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                        for campo, antes, depois in diff:
+                            conn.execute(
+                                "INSERT INTO historico "
+                                "(solicitacao_id,solicitacao_num,usuario,data_hora,"
+                                "campo,valor_anterior,valor_novo) "
+                                "VALUES (?,?,?,?,?,?,?)",
+                                (sol_id, sol, self.login_str, now,
+                                 campo, antes or "", depois or "")
+                            )
+                    # Força flush completo para o arquivo físico (OneDrive)
+                    conn.execute("PRAGMA wal_checkpoint(FULL)")
                     conn.close()
-                    salvar_historico(sol_id, sol, self.login_str, diff, self.page)
+                    # Gera Excel em background
+                    threading.Thread(
+                        target=self._salvar_excel_bg,
+                        daemon=True
+                    ).start()
                     self._snack(f"✅  Solicitação {sol} atualizada!")
                     self._ir_lista()
             except sqlite3.IntegrityError:
                 lbl_er.value = f"❌  Solicitação '{sol}' já existe!"
                 self.page.update()
             except Exception as ex:
-                lbl_er.value = f"❌  Erro: {ex}"
+                lbl_er.value = f"❌  Erro ao salvar: {ex}"
                 self.page.update()
 
         def _confirmar_excluir():
@@ -1426,6 +1458,19 @@ class App:
         self.page.update()
 
     # ── DIALOGS ──────────────────────────────────────────────────
+    def _salvar_excel_bg(self):
+        """Gera Excel e faz checkpoint — chamado em background após cada save."""
+        try:
+            # Pequena pausa para garantir que o WAL já foi flushed
+            import time; time.sleep(0.5)
+            ok, resultado = exportar_excel(self.page)
+            if ok:
+                print(f"Excel gerado: {resultado}")
+            else:
+                print(f"Excel erro: {resultado}")
+        except Exception as e:
+            print(f"_salvar_excel_bg: {e}")
+
     def _dialog_sync(self):
         """Exporta Excel e faz checkpoint do WAL (sincroniza banco)."""
         def _run():
