@@ -76,75 +76,91 @@ SIT_CORES = {
 }
 
 # ── Configuração persistente ──────────────────────────────────────
-_DB_PATH    = None
-_PAGE_REF   = None   # referência global à page para get_config_path
+# Único lugar onde o caminho do banco é mantido
+_DB_PATH  = None   # caminho real em uso
+_PAGE_REF = None   # referência global à page
 
-def _get_config_dir(page=None):
-    """Retorna pasta para salvar config.json (persiste entre sessões)"""
+def _get_config_file():
+    """
+    Retorna o caminho do arquivo config.json.
+    Usa _PAGE_REF se disponível, senão usa pasta home.
+    """
+    try:
+        if _PAGE_REF and hasattr(_PAGE_REF, "app_data_dir"):
+            base = str(_PAGE_REF.app_data_dir or "")
+            if base and base != "None":
+                os.makedirs(base, exist_ok=True)
+                return os.path.join(base, "reparos_config.json")
+    except Exception:
+        pass
+    base = os.path.expanduser("~")
+    return os.path.join(base, "reparos_config.json")
+
+def load_config():
+    """Lê config.json. Retorna dict ou {}."""
+    try:
+        p = _get_config_file()
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"load_config: {e}")
+    return {}
+
+def save_config(db_path):
+    """Salva o caminho do banco no config.json."""
+    global _DB_PATH
+    _DB_PATH = db_path          # atualiza imediatamente em memória
+    try:
+        cfg = {"db_path": db_path}
+        p   = _get_config_file()
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        print(f"save_config OK: {p} -> {db_path}")
+    except Exception as e:
+        print(f"save_config erro: {e}")
+
+# ── Database ──────────────────────────────────────────────────────
+_DB_PATH = None   # só declarado aqui — sem duplicata
+
+def get_db_path(page=None):
+    """
+    Retorna o caminho atual do banco.
+    Ordem de prioridade:
+      1. _DB_PATH já definido em memória
+      2. config.json salvo no disco
+      3. pasta interna do app (app_data_dir)
+      4. pasta home
+    """
+    global _DB_PATH
+    # 1. Já definido
+    if _DB_PATH:
+        return _DB_PATH
+    # 2. Config salvo
+    cfg = load_config()
+    saved = cfg.get("db_path", "")
+    if saved and os.path.exists(saved):
+        _DB_PATH = saved
+        print(f"get_db_path: carregado do config: {_DB_PATH}")
+        return _DB_PATH
+    # 3. Pasta interna do app
     p = page or _PAGE_REF
     try:
         if p and hasattr(p, "app_data_dir") and p.app_data_dir:
             base = str(p.app_data_dir)
             if base and base != "None":
                 os.makedirs(base, exist_ok=True)
-                return base
-    except Exception:
-        pass
-    base = os.path.expanduser("~")
-    os.makedirs(base, exist_ok=True)
-    return base
-
-def _config_path(page=None):
-    return os.path.join(_get_config_dir(page), "reparos_config.json")
-
-def load_config(page=None):
-    """Carrega configuração salva. Retorna dict ou {}."""
-    try:
-        p = _config_path(page)
-        if os.path.exists(p):
-            with open(p, encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
-
-def save_config(db_path, page=None):
-    """Salva caminho do banco em config.json persistente."""
-    try:
-        cfg = {"db_path": db_path}
-        with open(_config_path(page), "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"save_config: {e}")
-
-# ── Database ──────────────────────────────────────────────────────
-_DB_PATH = None
-
-def get_db_path(page=None):
-    global _DB_PATH
-    if _DB_PATH:
-        return _DB_PATH
-    # 1. Tenta config salva
-    cfg = load_config(page)
-    if cfg.get("db_path") and os.path.exists(cfg["db_path"]):
-        _DB_PATH = cfg["db_path"]
-        return _DB_PATH
-    # 2. Pasta interna do app
-    try:
-        p = page or _PAGE_REF
-        if p and hasattr(p, "app_data_dir") and p.app_data_dir:
-            base = str(p.app_data_dir)
-            if base and base != "None":
-                os.makedirs(base, exist_ok=True)
                 _DB_PATH = os.path.join(base, "reparos.db")
+                print(f"get_db_path: app_data_dir: {_DB_PATH}")
                 return _DB_PATH
     except Exception:
         pass
-    # 3. Fallback
+    # 4. Fallback home
     try:
         _DB_PATH = os.path.join(os.path.expanduser("~"), "reparos.db")
     except Exception:
         _DB_PATH = "reparos.db"
+    print(f"get_db_path: fallback: {_DB_PATH}")
     return _DB_PATH
 
 def get_conn(page=None):
@@ -433,7 +449,7 @@ class App:
                         ft.Text("Banco local criado automaticamente",
                                 size=11, color="#ffaa44", expand=True),
                     ], spacing=6),
-                    ft.Text(f"📁 {db_path}", size=10, color=TEXT3),
+                    ft.Text(f"📁 {db_path}", size=10, color=TEXT3, selectable=True),
                     ft.Text("Toque em ⚙️ para usar o banco do OneDrive",
                             size=10, color=TEXT3),
                 ], spacing=4),
@@ -653,7 +669,7 @@ class App:
             try:
                 init_db(self.page)
                 # Salva config — próxima abertura já carrega este banco
-                save_config(p, self.page)
+                save_config(p)
                 lbl_ok.value = f"✅ Banco configurado e salvo!"
                 lbl_er.value = ""
                 lbl_status.value = f"✅ Banco: {os.path.basename(p)}"
@@ -669,12 +685,13 @@ class App:
                 self.page.update()
                 return
             global _DB_PATH
-            _DB_PATH = None  # reseta para usar o padrão local
+            _DB_PATH = None  # reseta para recalcular com app_data_dir
             try:
-                init_db(self.page)
+                # Força recálculo do caminho padrão
                 db = get_db_path(self.page)
-                # Salva config do banco local
-                save_config(db, self.page)
+                init_db(self.page)
+                # Salva config do banco local para persistir
+                save_config(db)
                 lbl_ok.value = f"✅ Banco local criado e salvo!"
                 lbl_ok.color = "#44cc88"
                 lbl_er.value = ""
@@ -756,7 +773,7 @@ class App:
                             size=11, color=TEXT2,
                         ),
                         ft.Container(height=6),
-                        ft.Text(f"📁 Local: {get_db_path(self.page)}",
+                        ft.Text(f"📁 Local: {get_db_path(self.page)}", selectable=True,
                                 size=10, color=TEXT3),
                         ft.Container(height=6),
                         botao("📱  Criar/Usar Banco Local",
@@ -1085,6 +1102,9 @@ class App:
             try:
                 # ── Abre conexão com isolation_level None (autocommit) ──
                 db_path = get_db_path(self.page)
+                print(f"SALVANDO em: {db_path}")  # debug
+                self._snack(f"💾 Gravando em: {os.path.basename(db_path)}...", "#1a3a6b")
+                self.page.update()
                 conn = sqlite3.connect(db_path, timeout=15,
                                        isolation_level=None)
                 conn.row_factory = sqlite3.Row
