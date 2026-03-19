@@ -344,8 +344,11 @@ class App:
             self.page.controls.clear()
             self.page.appbar = None
             self.page.floating_action_button = None
-            # Remove FilePickers do overlay
-            self.page.overlay.clear()
+            # Mantém FilePickers no overlay, remove apenas dialogs
+            self.page.overlay[:] = [
+                o for o in self.page.overlay
+                if isinstance(o, ft.FilePicker)
+            ]
         except Exception as e:
             print(f"_clear erro: {e}")
 
@@ -552,31 +555,37 @@ class App:
         )
         e_adm  = inp("Senha do administrador", password=True)
         e_path = ft.TextField(
-            hint_text="Toque em 🔍 Procurar para selecionar o arquivo .db",
+            hint_text="Procure o arquivo ou digite o caminho manualmente",
             bgcolor=BG2, color=TEXT, border_color=BORDER,
             focused_border_color=ACCENT, border_radius=8,
             content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
-            text_size=12, expand=True, read_only=True,
+            text_size=12, expand=True,
             hint_style=ft.TextStyle(color=TEXT3),
         )
         lbl_er = ft.Text("", color="#ff6666", size=12)
         lbl_ok = ft.Text("", color="#44cc88", size=12)
 
-        # FilePicker
+        # FilePicker - Flet 0.24.1 compatível
         def on_pick(ev):
-            if ev.files and len(ev.files) > 0:
-                caminho = ev.files[0].path or ""
-                if caminho:
-                    e_path.value = caminho
-                    lbl_er.value = ""
-                    lbl_ok.value = f"Selecionado: {os.path.basename(caminho)}"
-                    lbl_ok.color = ACCENT
+            try:
+                if ev.files and len(ev.files) > 0:
+                    f = ev.files[0]
+                    caminho = getattr(f, "path", None) or getattr(f, "name", "") or ""
+                    if caminho:
+                        e_path.value = caminho
+                        lbl_er.value = ""
+                        lbl_ok.value = f"✅ Selecionado: {os.path.basename(caminho)}"
+                        lbl_ok.color = "#44cc88"
+                    else:
+                        lbl_er.value = "⚠ Não foi possível obter o caminho. Digite manualmente."
                 self.page.update()
+            except Exception as ex:
+                print(f"on_pick erro: {ex}")
 
+        # Adiciona FilePicker ao overlay ANTES de montar a tela
         fp = ft.FilePicker(on_result=on_pick)
-        if fp not in self.page.overlay:
-            self.page.overlay.append(fp)
-        self.page.update()
+        self.page.overlay.append(fp)
+        self.page.update()  # registra o fp no overlay
 
         def usar_banco_externo(e):
             if (e_adm.value or "") != ADMIN_PASSWORD:
@@ -661,7 +670,6 @@ class App:
                                 tooltip="Procurar arquivo",
                                 on_click=lambda e: fp.pick_files(
                                     dialog_title="Selecionar SOLICITACOES.db",
-                                    allowed_extensions=["db"],
                                     allow_multiple=False,
                                 ),
                             ),
