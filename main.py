@@ -4,7 +4,7 @@ Compatível com Flet 0.24.1 — Banco SQLite local no tablet.
 """
 
 import flet as ft
-import sqlite3, hashlib, json, os
+import sqlite3, hashlib, json, os, shutil, threading
 from datetime import datetime
 
 # ── Constantes ───────────────────────────────────────────────────
@@ -75,6 +75,48 @@ SIT_CORES = {
     "FINALIZADO":  ("#0d3a1a", "#7aff9a"),
 }
 
+# ── Configuração persistente ──────────────────────────────────────
+_DB_PATH    = None
+_PAGE_REF   = None   # referência global à page para get_config_path
+
+def _get_config_dir(page=None):
+    """Retorna pasta para salvar config.json (persiste entre sessões)"""
+    p = page or _PAGE_REF
+    try:
+        if p and hasattr(p, "app_data_dir") and p.app_data_dir:
+            base = str(p.app_data_dir)
+            if base and base != "None":
+                os.makedirs(base, exist_ok=True)
+                return base
+    except Exception:
+        pass
+    base = os.path.expanduser("~")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+def _config_path(page=None):
+    return os.path.join(_get_config_dir(page), "reparos_config.json")
+
+def load_config(page=None):
+    """Carrega configuração salva. Retorna dict ou {}."""
+    try:
+        p = _config_path(page)
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def save_config(db_path, page=None):
+    """Salva caminho do banco em config.json persistente."""
+    try:
+        cfg = {"db_path": db_path}
+        with open(_config_path(page), "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"save_config: {e}")
+
 # ── Database ──────────────────────────────────────────────────────
 _DB_PATH = None
 
@@ -82,19 +124,25 @@ def get_db_path(page=None):
     global _DB_PATH
     if _DB_PATH:
         return _DB_PATH
-    # No Android, tenta app_data_dir, senão usa /data/user/0/...
+    # 1. Tenta config salva
+    cfg = load_config(page)
+    if cfg.get("db_path") and os.path.exists(cfg["db_path"]):
+        _DB_PATH = cfg["db_path"]
+        return _DB_PATH
+    # 2. Pasta interna do app
     try:
-        if page and hasattr(page, "app_data_dir") and page.app_data_dir:
-            base = str(page.app_data_dir)
+        p = page or _PAGE_REF
+        if p and hasattr(p, "app_data_dir") and p.app_data_dir:
+            base = str(p.app_data_dir)
             if base and base != "None":
+                os.makedirs(base, exist_ok=True)
                 _DB_PATH = os.path.join(base, "reparos.db")
                 return _DB_PATH
     except Exception:
         pass
-    # Fallback: pasta do app no Android ou home no desktop
+    # 3. Fallback
     try:
-        base = os.path.expanduser("~")
-        _DB_PATH = os.path.join(base, "reparos.db")
+        _DB_PATH = os.path.join(os.path.expanduser("~"), "reparos.db")
     except Exception:
         _DB_PATH = "reparos.db"
     return _DB_PATH
@@ -301,7 +349,9 @@ def secao(titulo, controles):
 # ── App ───────────────────────────────────────────────────────────
 class App:
     def __init__(self, page: ft.Page):
+        global _PAGE_REF
         self.page      = page
+        _PAGE_REF      = page   # referência global para funções fora da classe
         self.usuario   = None
         self.login_str = ""
         try:
@@ -602,7 +652,9 @@ class App:
             _DB_PATH = p
             try:
                 init_db(self.page)
-                lbl_ok.value = f"✅ Banco configurado: {os.path.basename(p)}"
+                # Salva config — próxima abertura já carrega este banco
+                save_config(p, self.page)
+                lbl_ok.value = f"✅ Banco configurado e salvo!"
                 lbl_er.value = ""
                 lbl_status.value = f"✅ Banco: {os.path.basename(p)}"
                 lbl_status.color = "#44cc88"
@@ -620,7 +672,10 @@ class App:
             _DB_PATH = None  # reseta para usar o padrão local
             try:
                 init_db(self.page)
-                lbl_ok.value = f"✅ Banco local criado em: {get_db_path(self.page)}"
+                db = get_db_path(self.page)
+                # Salva config do banco local
+                save_config(db, self.page)
+                lbl_ok.value = f"✅ Banco local criado e salvo!"
                 lbl_ok.color = "#44cc88"
                 lbl_er.value = ""
                 lbl_status.value = "✅ Usando banco local"
@@ -1372,39 +1427,25 @@ class App:
 
     # ── DIALOGS ──────────────────────────────────────────────────
     def _dialog_sync(self):
-        db_path = get_db_path(self.page)
-        dlg = ft.AlertDialog(
-            title=ft.Text("📂  Sincronização", color=ACCENT),
-            bgcolor=CARD,
-            content=ft.Column([
-                ft.Text("Banco de dados do tablet:", color=TEXT2, size=13),
-                ft.Container(
-                    ft.Text(db_path, color=ACCENT, size=11, selectable=True),
-                    bgcolor=BG2, border_radius=6, padding=10,
-                    border=ft.border.all(1, BORDER),
-                ),
-                ft.Container(height=8),
-                ft.Text("Para sincronizar com o PC:", color=TEXT2, size=13,
-                        weight="w600"),
-                ft.Text(
-                    "1. Conecte o tablet via cabo USB\n"
-                    "2. Copie o arquivo reparos.db\n"
-                    "3. Cole no PC substituindo o banco existente\n"
-                    "4. O schema é compatível com o sistema desktop",
-                    color=TEXT2, size=12,
-                ),
-            ], tight=True, width=300, scroll="auto"),
-            actions=[
-                ft.TextButton("Fechar",
-                    on_click=lambda e: (
-                        setattr(dlg, "open", False), self.page.update()
-                    )
+        """Exporta Excel e faz checkpoint do WAL (sincroniza banco)."""
+        def _run():
+            # 1. Checkpoint WAL para garantir dados gravados
+            ok_sync, msg_sync = sincronizar_banco(self.page)
+            # 2. Gera Excel
+            ok_xl, resultado = exportar_excel(self.page)
+            if ok_xl:
+                self._snack(
+                    f"✅ Excel salvo: {os.path.basename(resultado)}", "#1a5c1a"
                 )
-            ],
-        )
-        self.page.overlay.append(dlg)
-        dlg.open = True
-        self.page.update()
+            else:
+                self._snack(f"❌ Erro Excel: {resultado}", "#8b0000")
+
+        self._snack("⏳ Gerando Excel e sincronizando...", "#1a3a6b")
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _exportar_excel_btn(self, e):
+        self._dialog_sync()
+
 
     def _dialog_sobre(self):
         db_path = get_db_path(self.page)
