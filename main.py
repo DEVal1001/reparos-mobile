@@ -82,14 +82,21 @@ def get_db_path(page=None):
     global _DB_PATH
     if _DB_PATH:
         return _DB_PATH
+    # No Android, tenta app_data_dir, senão usa /data/user/0/...
     try:
         if page and hasattr(page, "app_data_dir") and page.app_data_dir:
-            base = page.app_data_dir
-        else:
-            base = os.path.expanduser("~")
+            base = str(page.app_data_dir)
+            if base and base != "None":
+                _DB_PATH = os.path.join(base, "reparos.db")
+                return _DB_PATH
     except Exception:
+        pass
+    # Fallback: pasta do app no Android ou home no desktop
+    try:
         base = os.path.expanduser("~")
-    _DB_PATH = os.path.join(base, "reparos.db")
+        _DB_PATH = os.path.join(base, "reparos.db")
+    except Exception:
+        _DB_PATH = "reparos.db"
     return _DB_PATH
 
 def get_conn(page=None):
@@ -294,16 +301,29 @@ def secao(titulo, controles):
 # ── App ───────────────────────────────────────────────────────────
 class App:
     def __init__(self, page: ft.Page):
-        self.page     = page
-        self.usuario  = None
+        self.page      = page
+        self.usuario   = None
         self.login_str = ""
-        self._setup_page()
-        # Sempre mostra o login — init_db em background sem travar
+        try:
+            self._setup_page()
+        except Exception as e:
+            print(f"setup_page erro: {e}")
+        # Mostra login PRIMEIRO, init_db depois
+        try:
+            self._ir_login()
+        except Exception as e:
+            # Se falhar, mostra tela de erro mínima
+            print(f"ir_login erro: {e}")
+            self.page.controls.clear()
+            self.page.controls.append(
+                ft.Text(f"Erro ao iniciar: {e}", color="red", size=14)
+            )
+            self.page.update()
+        # Init DB após mostrar tela
         try:
             init_db(page)
         except Exception as e:
-            print(f"init_db: {e}")
-        self._ir_login()
+            print(f"init_db erro: {e}")
 
     def _setup_page(self):
         p = self.page
@@ -311,7 +331,6 @@ class App:
         p.theme_mode = ft.ThemeMode.DARK
         p.bgcolor    = BG
         p.padding    = 0
-        p.theme      = ft.Theme(color_scheme_seed=ACCENT)
 
     def _snack(self, msg, cor="#2e7d32"):
         self.page.snack_bar = ft.SnackBar(
@@ -321,9 +340,14 @@ class App:
         self.page.update()
 
     def _clear(self):
-        self.page.controls.clear()
-        self.page.appbar = None
-        self.page.floating_action_button = None
+        try:
+            self.page.controls.clear()
+            self.page.appbar = None
+            self.page.floating_action_button = None
+            # Remove FilePickers do overlay
+            self.page.overlay.clear()
+        except Exception as e:
+            print(f"_clear erro: {e}")
 
     # ── LOGIN ─────────────────────────────────────────────────────
     def _ir_login(self):
@@ -388,7 +412,8 @@ class App:
 
         e_senha.on_submit = entrar
 
-        self.page.controls.append(ft.Column([
+        try:
+            self.page.controls.append(ft.Column([
             # Header
             ft.Container(
                 ft.Column([
@@ -440,6 +465,9 @@ class App:
                 padding=20, expand=True,
             ),
         ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO))
+        except Exception as e:
+            print(f"login build erro: {e}")
+            self.page.controls.append(ft.Text(f"Erro: {e}", color="red"))
         self.page.update()
 
     # ── CADASTRO ─────────────────────────────────────────────────
