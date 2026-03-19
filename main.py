@@ -236,7 +236,7 @@ def salvar_historico(sol_id, sol_num, usuario, diff, page=None):
 
 # ── Helpers UI ────────────────────────────────────────────────────
 def lbl(texto):
-    return ft.Text(texto, size=12, color=TEXT2, weight=ft.FontWeight.W_600)
+    return ft.Text(texto, size=12, color=TEXT2, weight="w600")
 
 def inp(hint="", value="", password=False, expand=True, width=None, read_only=False):
     return ft.TextField(
@@ -266,9 +266,9 @@ def botao(texto, on_click=None, bg=None, expand=False, icon=None):
     return ft.ElevatedButton(
         text=texto, on_click=on_click, expand=expand, icon=icon,
         style=ft.ButtonStyle(
-            color={ft.ControlState.DEFAULT: WHITE},
-            bgcolor={ft.ControlState.DEFAULT: bg or "#1a4a8c",
-                     ft.ControlState.HOVERED: "#1f5aad"},
+            color={"default": WHITE},
+            bgcolor={"default": bg or "#1a4a8c",
+                     "hovered": "#1f5aad"},
             shape=ft.RoundedRectangleBorder(radius=8),
             padding=ft.padding.symmetric(horizontal=16, vertical=10),
         ),
@@ -278,7 +278,7 @@ def sit_chip(situacao):
     sit = (situacao or "").upper()
     bg, fg = SIT_CORES.get(sit, (CARD, TEXT2))
     return ft.Container(
-        content=ft.Text(situacao or "—", size=11, color=fg, weight=ft.FontWeight.W_700),
+        content=ft.Text(situacao or "—", size=11, color=fg, weight="w700"),
         bgcolor=bg, border_radius=12,
         padding=ft.padding.symmetric(horizontal=10, vertical=3),
     )
@@ -287,8 +287,8 @@ def secao(titulo, controles):
     return ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.LABEL, color=ACCENT, size=16),
-                ft.Text(titulo, size=13, color=ACCENT, weight=ft.FontWeight.W_700),
+                ft.Icon(ft.icons.LABEL, color=ACCENT, size=16),
+                ft.Text(titulo, size=13, color=ACCENT, weight="w700"),
             ]),
             ft.Divider(height=1, color=BORDER),
             *controles,
@@ -328,7 +328,7 @@ class App:
     def _setup_page(self):
         p = self.page
         p.title      = "Gerenciamento dos Reparos"
-        p.theme_mode = ft.ThemeMode.DARK
+        p.theme_mode = "dark"
         p.bgcolor    = BG
         p.padding    = 0
 
@@ -363,7 +363,7 @@ class App:
         if db_existe:
             status_banco = ft.Container(
                 ft.Row([
-                    ft.Icon(ft.Icons.CHECK_CIRCLE, color="#44cc88", size=16),
+                    ft.Icon(ft.icons.CHECK_CIRCLE, color="#44cc88", size=16),
                     ft.Text(f"Banco: {db_nome}", size=11, color="#44cc88", expand=True),
                     ft.TextButton("Trocar", on_click=lambda e: self._ir_config(),
                         style=ft.ButtonStyle(color=ACCENT,
@@ -376,7 +376,7 @@ class App:
             status_banco = ft.Container(
                 ft.Column([
                     ft.Row([
-                        ft.Icon(ft.Icons.WARNING_AMBER, color="#ffaa44", size=16),
+                        ft.Icon(ft.icons.WARNING_AMBER, color="#ffaa44", size=16),
                         ft.Text("Banco local criado automaticamente",
                                 size=11, color="#ffaa44", expand=True),
                     ], spacing=6),
@@ -417,14 +417,14 @@ class App:
             # Header
             ft.Container(
                 ft.Column([
-                    ft.Icon(ft.Icons.LIST_ALT, color=ACCENT, size=52),
+                    ft.Icon(ft.icons.LIST_ALT, color=ACCENT, size=52),
                     ft.Text("Gerenciamento dos Reparos", size=18, color=ACCENT,
-                            weight=ft.FontWeight.BOLD,
-                            text_align=ft.TextAlign.CENTER),
+                            weight="bold",
+                            text_align="center"),
                     ft.Text("Desenvolvido por Valdemir Vieira Alves",
                             size=11, color=TEXT3,
-                            text_align=ft.TextAlign.CENTER),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
+                            text_align="center"),
+                ], horizontal_alignment="center", spacing=6),
                 bgcolor=CARD, padding=24,
                 border=ft.border.only(bottom=ft.BorderSide(1, BORDER)),
             ),
@@ -434,7 +434,7 @@ class App:
                     status_banco,
                     ft.Container(height=4),
                     ft.Text("🔐  Acesso ao Sistema", size=16, color=TEXT,
-                            weight=ft.FontWeight.BOLD),
+                            weight="bold"),
                     lbl("Login"), e_login,
                     lbl("Senha"), e_senha,
                     lbl_err,
@@ -445,9 +445,9 @@ class App:
                         "⚙️  Configurar / Trocar Banco",
                         on_click=lambda e: self._ir_config(),
                         style=ft.ButtonStyle(
-                            color={ft.ControlState.DEFAULT: "#a0c4ff"},
-                            bgcolor={ft.ControlState.DEFAULT: "#1a2a4a",
-                                     ft.ControlState.HOVERED: "#1f3a6b"},
+                            color={"default": "#a0c4ff"},
+                            bgcolor={"default": "#1a2a4a",
+                                     "hovered": "#1f3a6b"},
                             shape=ft.RoundedRectangleBorder(radius=8),
                             padding=ft.padding.symmetric(horizontal=16, vertical=10),
                         ),
@@ -460,11 +460,11 @@ class App:
                         ft.TextButton("ℹ️  Sobre",
                             on_click=lambda e: self._dialog_sobre(),
                             style=ft.ButtonStyle(color=TEXT3)),
-                    ], alignment=ft.MainAxisAlignment.CENTER),
+                    ], alignment="center"),
                 ], spacing=8),
                 padding=20, expand=True,
             ),
-        ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO))
+        ], spacing=0, expand=True, scroll="auto"))
         except Exception as e:
             print(f"login build erro: {e}")
             self.page.controls.append(ft.Text(f"Erro: {e}", color="red"))
@@ -515,13 +515,13 @@ class App:
             title=ft.Text("Cadastrar Usuário", color=TEXT),
             bgcolor=CARD,
             leading=ft.IconButton(
-                ft.Icons.ARROW_BACK, icon_color=TEXT,
+                ft.icons.ARROW_BACK, icon_color=TEXT,
                 on_click=lambda e: self._ir_login()
             ),
         )
         self.page.controls.append(ft.ListView([
             ft.Container(ft.Column([
-                ft.Text("👤  Novo Usuário", size=16, color=ACCENT, weight=ft.FontWeight.BOLD),
+                ft.Text("👤  Novo Usuário", size=16, color=ACCENT, weight="bold"),
                 ft.Text("Requer senha do administrador", size=12, color=TEXT3),
                 ft.Container(height=4),
                 lbl("Senha do Administrador *"), e_adm,
@@ -548,7 +548,7 @@ class App:
             f"✅ Banco atual: {os.path.basename(db_atual)}" if db_existe
             else "⚠️ Banco local vazio (sem dados)",
             color="#44cc88" if db_existe else "#ffaa44",
-            size=12, text_align=ft.TextAlign.CENTER,
+            size=12, text_align="center",
         )
         e_adm  = inp("Senha do administrador", password=True)
         e_path = ft.TextField(
@@ -624,7 +624,7 @@ class App:
             title=ft.Text("⚙️  Configurar Banco", color=TEXT),
             bgcolor=CARD,
             leading=ft.IconButton(
-                ft.Icons.ARROW_BACK, icon_color=TEXT,
+                ft.icons.ARROW_BACK, icon_color=TEXT,
                 on_click=lambda e: self._ir_login()
             ),
         )
@@ -632,7 +632,7 @@ class App:
         self.page.controls.append(ft.ListView([
             ft.Container(ft.Column([
                 ft.Text("⚙️  Configuração do Banco de Dados",
-                        size=16, color=ACCENT, weight=ft.FontWeight.BOLD),
+                        size=16, color=ACCENT, weight="bold"),
                 lbl_status,
                 ft.Container(height=8),
 
@@ -640,10 +640,10 @@ class App:
                 ft.Container(
                     ft.Column([
                         ft.Row([
-                            ft.Icon(ft.Icons.CLOUD, color=ACCENT, size=18),
+                            ft.Icon(ft.icons.CLOUD, color=ACCENT, size=18),
                             ft.Text("Opção 1 — Usar banco do OneDrive",
                                     size=13, color=ACCENT,
-                                    weight=ft.FontWeight.W_600),
+                                    weight="w600"),
                         ], spacing=8),
                         ft.Text(
                             "1. No OneDrive baixe o SOLICITACOES.db\n2. Ele vai para Downloads\n3. Toque em Procurar e selecione",
@@ -657,7 +657,7 @@ class App:
                         ft.Row([
                             e_path,
                             ft.IconButton(
-                                ft.Icons.SEARCH, icon_color=ACCENT,
+                                ft.icons.SEARCH, icon_color=ACCENT,
                                 tooltip="Procurar arquivo",
                                 on_click=lambda e: fp.pick_files(
                                     dialog_title="Selecionar SOLICITACOES.db",
@@ -683,10 +683,10 @@ class App:
                 ft.Container(
                     ft.Column([
                         ft.Row([
-                            ft.Icon(ft.Icons.PHONE_ANDROID, color="#88ffaa", size=18),
+                            ft.Icon(ft.icons.PHONE_ANDROID, color="#88ffaa", size=18),
                             ft.Text("Opção 2 — Criar banco local no tablet",
                                     size=13, color="#88ffaa",
-                                    weight=ft.FontWeight.W_600),
+                                    weight="w600"),
                         ], spacing=8),
                         ft.Text(
                             "Cria um banco novo no tablet. Ideal para comecar do zero.\nOs dados ficam salvos internamente.",
@@ -727,24 +727,24 @@ class App:
         self._f_sit = ddrop([""] + SITUACOES,
                             hint="Situação", expand=True, on_change=self._on_filtro)
         self._lbl_total = ft.Text("", size=12, color=TEXT3)
-        self._lista_col = ft.Column([], spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
+        self._lista_col = ft.Column([], spacing=6, scroll="auto", expand=True)
 
         self.page.appbar = ft.AppBar(
             title=ft.Text("Solicitações", color=TEXT),
             bgcolor=CARD,
             actions=[
                 ft.IconButton(
-                    ft.Icons.ADD_CIRCLE_OUTLINE, icon_color="#4caf50",
+                    ft.icons.ADD_CIRCLE_OUTLINE, icon_color="#4caf50",
                     tooltip="Nova",
                     on_click=lambda e: self._ir_formulario("novo")
                 ),
                 ft.IconButton(
-                    ft.Icons.INFO_OUTLINE, icon_color=ACCENT,
+                    ft.icons.INFO_OUTLINE, icon_color=ACCENT,
                     tooltip="Sincronização",
                     on_click=lambda e: self._dialog_sync()
                 ),
                 ft.IconButton(
-                    ft.Icons.LOGOUT, icon_color=TEXT3,
+                    ft.icons.LOGOUT, icon_color=TEXT3,
                     tooltip="Sair",
                     on_click=lambda e: self._ir_login()
                 ),
@@ -816,7 +816,7 @@ class App:
             self._lista_col.controls.append(
                 ft.Container(
                     ft.Text("Nenhum registro encontrado.", color=TEXT3,
-                            text_align=ft.TextAlign.CENTER),
+                            text_align="center"),
                     alignment=ft.alignment.center, expand=True, padding=40,
                 )
             )
@@ -829,14 +829,14 @@ class App:
             total_pgs = (total + self._per_page - 1) // self._per_page
             self._lista_col.controls.append(
                 ft.Row([
-                    ft.IconButton(ft.Icons.CHEVRON_LEFT,
+                    ft.IconButton(ft.icons.CHEVRON_LEFT,
                                   disabled=self._pg <= 1,
                                   on_click=lambda e: self._pag(-1)),
                     ft.Text(f"{self._pg}/{total_pgs}", color=TEXT2),
-                    ft.IconButton(ft.Icons.CHEVRON_RIGHT,
+                    ft.IconButton(ft.icons.CHEVRON_RIGHT,
                                   disabled=self._pg >= total_pgs,
                                   on_click=lambda e: self._pag(1)),
-                ], alignment=ft.MainAxisAlignment.CENTER)
+                ], alignment="center")
             )
         self.page.update()
 
@@ -859,9 +859,9 @@ class App:
             content=ft.Column([
                 ft.Row([
                     ft.Text(r.get("solicitacao", "—"), size=14, color="#a0c8ff",
-                            weight=ft.FontWeight.BOLD, expand=True),
+                            weight="bold", expand=True),
                     sit_chip(r.get("situacao", "—")),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ], alignment="spaceBetween"),
                 ft.Row([
                     ft.Text(r.get("data_abertura", ""), size=11, color=TEXT3),
                     ft.Text("·", color=TEXT3),
@@ -872,7 +872,7 @@ class App:
                     (r.get("endereco") or "") +
                     (", " + r.get("bairro", "") if r.get("bairro") else ""),
                     size=11, color=TEXT3,
-                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                    max_lines=1, overflow="ellipsis",
                 ),
                 ft.Row([
                     ft.Text(r.get("categoria", "—"), size=11, color=TEXT3, expand=True),
@@ -882,7 +882,7 @@ class App:
                         style=ft.ButtonStyle(color=ACCENT,
                                              padding=ft.padding.all(0)),
                     ),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ], alignment="spaceBetween"),
             ], spacing=4),
             bgcolor=bg_card, border_radius=10,
             border=ft.border.all(1, BORDER),
@@ -1111,12 +1111,12 @@ class App:
                     ft.ElevatedButton(
                         "Excluir", on_click=_excluir,
                         style=ft.ButtonStyle(
-                            bgcolor={ft.ControlState.DEFAULT: DANGER},
-                            color={ft.ControlState.DEFAULT: WHITE},
+                            bgcolor={"default": DANGER},
+                            color={"default": WHITE},
                         ),
                     ),
                 ],
-                actions_alignment=ft.MainAxisAlignment.END,
+                actions_alignment="end",
             )
             self.page.overlay.append(dlg)
             dlg.open = True
@@ -1152,11 +1152,11 @@ class App:
                                 ft.Text(h["data_hora"], size=10, color=TEXT3),
                             ], spacing=6),
                             ft.Text(h["campo"], size=12, color=TEXT2,
-                                    weight=ft.FontWeight.W_600),
+                                    weight="w600"),
                             ft.Row([
                                 ft.Text(h["valor_anterior"] or "—",
                                         size=11, color="#ff8888"),
-                                ft.Icon(ft.Icons.ARROW_FORWARD, size=12, color=TEXT3),
+                                ft.Icon(ft.icons.ARROW_FORWARD, size=12, color=TEXT3),
                                 ft.Text(h["valor_novo"] or "—",
                                         size=11, color="#7aff9a"),
                             ], spacing=4, wrap=True),
@@ -1173,12 +1173,12 @@ class App:
                 ])
 
         appbar_actions = [
-            ft.IconButton(ft.Icons.SAVE, icon_color="#4caf50",
+            ft.IconButton(ft.icons.SAVE, icon_color="#4caf50",
                           tooltip="Salvar", on_click=_salvar),
         ]
         if modo == "editar":
             appbar_actions.append(
-                ft.IconButton(ft.Icons.DELETE_OUTLINE, icon_color="#ef5350",
+                ft.IconButton(ft.icons.DELETE_OUTLINE, icon_color="#ef5350",
                               tooltip="Excluir",
                               on_click=lambda e: _confirmar_excluir())
             )
@@ -1187,7 +1187,7 @@ class App:
             title=ft.Text(titulo, color=TEXT, size=15),
             bgcolor=CARD,
             leading=ft.IconButton(
-                ft.Icons.ARROW_BACK, icon_color=TEXT,
+                ft.icons.ARROW_BACK, icon_color=TEXT,
                 on_click=lambda e: self._ir_lista()
             ),
             actions=appbar_actions,
@@ -1247,7 +1247,7 @@ class App:
         conn.close()
 
         linhas     = []
-        col_linhas = ft.Column([], spacing=6, scroll=ft.ScrollMode.AUTO)
+        col_linhas = ft.Column([], spacing=6, scroll="auto")
         lbl_er     = ft.Text("", color="#ff6666", size=13)
 
         def _add(nome="", qtd="", tipo=""):
@@ -1284,10 +1284,10 @@ class App:
 
             row = ft.Row(
                 [e_n, e_q, e_t,
-                 ft.IconButton(ft.Icons.DELETE, icon_color="#ef5350",
+                 ft.IconButton(ft.icons.DELETE, icon_color="#ef5350",
                                icon_size=20, on_click=rm)],
                 spacing=4,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                vertical_alignment="center",
                 ref=row_ref,
             )
             col_linhas.controls.append(row)
@@ -1337,13 +1337,13 @@ class App:
             title=ft.Text(f"Materiais — {sol_num}", color=TEXT, size=14),
             bgcolor=CARD,
             leading=ft.IconButton(
-                ft.Icons.ARROW_BACK, icon_color=TEXT,
+                ft.icons.ARROW_BACK, icon_color=TEXT,
                 on_click=lambda e: self._ir_formulario("editar", sol_id)
             ),
             actions=[
-                ft.IconButton(ft.Icons.ADD, icon_color="#4caf50",
+                ft.IconButton(ft.icons.ADD, icon_color="#4caf50",
                               on_click=lambda e: _add()),
-                ft.IconButton(ft.Icons.SAVE, icon_color=ACCENT,
+                ft.IconButton(ft.icons.SAVE, icon_color=ACCENT,
                               on_click=_salvar_mat),
             ],
         )
@@ -1377,7 +1377,7 @@ class App:
                 ),
                 ft.Container(height=8),
                 ft.Text("Para sincronizar com o PC:", color=TEXT2, size=13,
-                        weight=ft.FontWeight.W_600),
+                        weight="w600"),
                 ft.Text(
                     "1. Conecte o tablet via cabo USB\n"
                     "2. Copie o arquivo reparos.db\n"
@@ -1385,7 +1385,7 @@ class App:
                     "4. O schema é compatível com o sistema desktop",
                     color=TEXT2, size=12,
                 ),
-            ], tight=True, width=300, scroll=ft.ScrollMode.AUTO),
+            ], tight=True, width=300, scroll="auto"),
             actions=[
                 ft.TextButton("Fechar",
                     on_click=lambda e: (
@@ -1405,14 +1405,14 @@ class App:
             bgcolor=CARD,
             content=ft.Column([
                 ft.Text("Sistema de Gerenciamento dos Reparos",
-                        color=TEXT, weight=ft.FontWeight.BOLD, size=14),
+                        color=TEXT, weight="bold", size=14),
                 ft.Text("Versão Mobile — Flet 0.24.1", color=TEXT2, size=12),
                 ft.Text("Desenvolvido por Valdemir Vieira Alves",
                         color=TEXT2, size=12),
                 ft.Text("(21) 99431-3049", color=ACCENT, size=12),
                 ft.Container(height=6),
                 ft.Text(f"Banco: {db_path}", color=TEXT3, size=10, selectable=True),
-            ], tight=True, spacing=6, scroll=ft.ScrollMode.AUTO, width=280),
+            ], tight=True, spacing=6, scroll="auto", width=280),
             actions=[
                 ft.TextButton("OK",
                     on_click=lambda e: (
