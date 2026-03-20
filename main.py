@@ -724,14 +724,13 @@ class App:
     # ── CONFIGURAR BANCO ─────────────────────────────────────────
     def _ir_config(self):
         self._clear()
-        global _DB_PATH
 
-        db_atual = _DB_PATH or ""
-        cfg      = load_config()
+        cfg     = load_config()
+        db_ok   = _DB_PATH and os.path.exists(_DB_PATH)
+        lbl_er  = ft.Text("", color="#ff6666", size=12)
+        lbl_ok  = ft.Text("", color="#44cc88", size=12)
 
         e_adm  = inp("Senha do administrador", password=True)
-
-        # Campo de caminho — usuário digita diretamente
         e_path = ft.TextField(
             value=cfg.get("db_path", ""),
             hint_text="/storage/emulated/0/Download/SOLICITACOES.db",
@@ -742,84 +741,69 @@ class App:
             hint_style=ft.TextStyle(color=TEXT3),
         )
 
-        lbl_er = ft.Text("", color="#ff6666", size=12)
-        lbl_ok = ft.Text("", color="#44cc88", size=12)
-
-        # Caminhos comuns no Android para o usuário copiar
-        CAMINHOS_COMUNS = [
-            "/storage/emulated/0/Download/SOLICITACOES.db",
-            "/storage/emulated/0/Download/solicitacoes_corrigido.db",
-            "/storage/emulated/0/Documents/SOLICITACOES.db",
-            "/storage/emulated/0/OneDrive/SOLICITACOES.db",
-            "/sdcard/Download/SOLICITACOES.db",
-        ]
-
-        def testar(e):
-            p = (e_path.value or "").strip()
-            if not p:
-                lbl_er.value = "⚠ Digite o caminho do banco."
-                lbl_ok.value = ""
+        # FilePicker — tenta obter caminho real
+        def on_pick(ev):
+            try:
+                if ev.files and ev.files[0]:
+                    p = getattr(ev.files[0], "path", "") or ""
+                    if p and "cache" not in p.lower():
+                        e_path.value = p
+                        lbl_ok.value = f"Selecionado: {os.path.basename(p)}"
+                        lbl_ok.color = ACCENT
+                    elif p:
+                        # Caminho de cache — tenta extrair nome e sugerir Downloads
+                        nome = os.path.basename(p)
+                        sugestao = f"/storage/emulated/0/Download/{nome}"
+                        e_path.value = sugestao
+                        lbl_er.value = (
+                            "⚠ O seletor retornou caminho de cache.\n"
+                            f"Verifique se o arquivo existe em:\n{sugestao}"
+                        )
+                    else:
+                        lbl_er.value = "⚠ Não obteve caminho. Digite manualmente."
                 self.page.update()
-                return
-            ok, msg = testar_banco(p)
-            if ok:
-                lbl_ok.value = f"✅ Caminho válido! Pode usar este banco."
-                lbl_ok.color = "#44cc88"
-                lbl_er.value = ""
-            else:
-                lbl_er.value = f"❌ {msg}"
-                lbl_ok.value = ""
-            self.page.update()
+            except Exception as ex:
+                lbl_er.value = f"Erro picker: {ex}"
+                self.page.update()
 
-        def usar_banco(e):
+        fp = ft.FilePicker(on_result=on_pick)
+        self.page.overlay.append(fp)
+        self.page.update()
+
+        def confirmar(e):
             if (e_adm.value or "") != ADMIN_PASSWORD:
-                lbl_er.value = "❌  Senha de administrador incorreta."
+                lbl_er.value = "❌ Senha de administrador incorreta."
                 lbl_ok.value = ""
                 self.page.update()
                 return
             p = (e_path.value or "").strip()
             if not p:
-                lbl_er.value = "⚠ Digite o caminho do banco."
+                lbl_er.value = "⚠ Informe o caminho do banco."
                 self.page.update()
                 return
             if not os.path.exists(p):
                 lbl_er.value = f"❌ Arquivo não encontrado:\n{p}"
                 self.page.update()
                 return
-            # Testa se consegue ler e escrever
-            ok, msg = testar_banco(p)
-            if not ok:
-                lbl_er.value = f"❌ Sem permissão de escrita: {msg}"
+            # Testa leitura/escrita direto no arquivo
+            try:
+                conn = sqlite3.connect(p, timeout=5, isolation_level=None)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA wal_checkpoint(FULL)")
+                conn.close()
+            except Exception as ex:
+                lbl_er.value = f"❌ Sem permissão de escrita: {ex}"
                 self.page.update()
                 return
-            # Salva e usa direto — sem copiar
-            save_config(p)  # save_config já atualiza _DB_PATH global
+            # Salva config — aponta direto para o arquivo do OneDrive
+            save_config(p)
             try:
                 init_db(self.page)
-                lbl_ok.value = f"✅ Banco configurado:\n{p}"
-                lbl_ok.color = "#44cc88"
-                lbl_er.value = ""
             except Exception as ex:
-                lbl_er.value = f"❌ Erro ao inicializar: {ex}"
-                lbl_ok.value = ""
-            self.page.update()
-
-        def usar_local(e):
-            if (e_adm.value or "") != ADMIN_PASSWORD:
-                lbl_er.value = "❌  Senha de administrador incorreta."
-                self.page.update()
-                return
-            global _DB_PATH
-            _DB_PATH = None
-            db = get_db_path(self.page)
-            try:
-                init_db(self.page)
-                save_config(db)
-                lbl_ok.value = f"✅ Banco local:\n{db}"
-                lbl_ok.color = "#44cc88"
-                lbl_er.value = ""
-            except Exception as ex:
-                lbl_er.value = f"❌ {ex}"
+                pass
+            lbl_ok.value = f"✅ Banco configurado!\n{p}"
+            lbl_ok.color = "#44cc88"
+            lbl_er.value = ""
             self.page.update()
 
         self.page.appbar = ft.AppBar(
@@ -834,59 +818,40 @@ class App:
         self.page.controls.append(ft.ListView([
             ft.Container(ft.Column([
 
-                ft.Text("⚙️  Configuração do Banco",
-                        size=16, color=ACCENT, weight="bold"),
+                ft.Text("⚙️  Banco de Dados", size=16,
+                        color=ACCENT, weight="bold"),
+                ft.Container(height=4),
 
-                # Status
+                # Status atual
                 ft.Container(
-                    ft.Column([
-                        ft.Text("Banco atual:", size=11, color=TEXT3),
+                    ft.Row([
+                        ft.Icon(ft.icons.CHECK_CIRCLE if db_ok
+                                else ft.icons.WARNING_AMBER,
+                                color="#44cc88" if db_ok else "#ffaa44",
+                                size=16),
                         ft.Text(
-                            db_atual or "Nenhum configurado",
-                            size=11,
-                            color="#44cc88" if (db_atual and os.path.exists(db_atual))
-                                  else "#ffaa44",
-                            selectable=True,
+                            os.path.basename(_DB_PATH) if db_ok else "Não configurado",
+                            size=12,
+                            color="#44cc88" if db_ok else "#ffaa44",
                         ),
-                    ], spacing=3),
+                    ], spacing=6),
                     bgcolor=BG2, border_radius=8, padding=10,
                     border=ft.border.all(1, BORDER),
                 ),
-                ft.Container(height=8),
+                ft.Container(height=10),
 
-                # Instrução
                 ft.Container(
                     ft.Column([
-                        ft.Text("📱 Onde fica o banco no OneDrive?",
-                                size=12, color=ACCENT, weight="bold"),
+                        ft.Row([
+                            ft.Icon(ft.icons.INFO_OUTLINE, color=ACCENT, size=14),
+                            ft.Text("Como localizar o banco no tablet:",
+                                    size=12, color=ACCENT, weight="bold"),
+                        ], spacing=6),
                         ft.Text(
-                            "No OneDrive, baixe o SOLICITACOES.db e cole o caminho abaixo:",
+                            "1. OneDrive > segure SOLICITACOES.db > Salvar\n2. Arquivo vai para Downloads\n3. Use 🔍 ou digite o caminho abaixo",
                             size=11, color=TEXT2,
                         ),
-                        # Chips de caminhos comuns
-                        ft.Column([
-                            ft.Container(
-                                ft.Row([
-                                    ft.Text(c, size=10, color=TEXT3,
-                                            expand=True, selectable=True),
-                                    ft.IconButton(
-                                        ft.icons.COPY, icon_size=14,
-                                        icon_color=ACCENT,
-                                        tooltip="Copiar",
-                                        on_click=lambda e, _c=c: (
-                                            setattr(e_path, "value", _c),
-                                            self.page.update()
-                                        ),
-                                    ),
-                                ], spacing=2),
-                                bgcolor=BG2, border_radius=6,
-                                padding=ft.padding.symmetric(
-                                    horizontal=8, vertical=4),
-                                border=ft.border.all(1, BORDER),
-                            )
-                            for c in CAMINHOS_COMUNS
-                        ], spacing=4),
-                    ], spacing=6),
+                    ], spacing=4),
                     bgcolor=BG3, border_radius=8, padding=12,
                     border=ft.border.all(1, BORDER),
                 ),
@@ -894,28 +859,31 @@ class App:
 
                 lbl("Senha do Administrador *"),
                 e_adm,
-                ft.Container(height=6),
+                ft.Container(height=8),
 
-                lbl("Caminho completo do arquivo .db *"),
-                e_path,
-                ft.Container(height=6),
-
-                # Botão Testar
-                botao("🔍  Testar Caminho",
-                      on_click=testar, bg="#1a2a4a", expand=True),
-                ft.Container(height=6),
+                lbl("Caminho do banco (.db)"),
+                ft.Row([
+                    e_path,
+                    ft.IconButton(
+                        ft.icons.FOLDER_OPEN,
+                        icon_color=ACCENT,
+                        tooltip="Procurar arquivo",
+                        on_click=lambda e: fp.pick_files(
+                            dialog_title="Selecionar banco .db",
+                            allow_multiple=False,
+                        ),
+                    ),
+                ], spacing=4),
+                ft.Container(height=10),
 
                 lbl_er,
                 lbl_ok,
-                ft.Container(height=6),
-
-                botao("💾  Salvar e Usar Este Banco",
-                      on_click=usar_banco, bg=SUCCESS, expand=True),
                 ft.Container(height=8),
-                botao("📱  Usar Banco Local (sem OneDrive)",
-                      on_click=usar_local, bg="#2a2a2a", expand=True),
-                ft.Container(height=24),
 
+                botao("💾  Confirmar e Salvar",
+                      on_click=confirmar, bg=SUCCESS, expand=True),
+
+                ft.Container(height=24),
             ], spacing=8), padding=16)
         ], expand=True))
         self.page.update()
